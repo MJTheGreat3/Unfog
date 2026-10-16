@@ -248,9 +248,9 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
                                     Text(
                                         "${i + 1}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF12151D),
+                                        color = Color.White,
                                         modifier = Modifier.padding(6.dp)
-                                            .background(Color(0xFF7FC8F8), RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFE0218A), RoundedCornerShape(8.dp))
                                             .padding(horizontal = 6.dp, vertical = 1.dp),
                                     )
                                 }

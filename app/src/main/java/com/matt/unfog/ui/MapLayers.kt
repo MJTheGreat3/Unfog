@@ -126,7 +126,7 @@ object MapLayers {
 
         style.addLayer(
             CircleLayer(LAYER_PHOTO_CLUSTERS, PHOTOS).withProperties(
-                circleColor(Color.rgb(127, 200, 248)),
+                circleColor(Color.rgb(224, 33, 138)),
                 circleRadius(interpolate(linear(), get("point_count"), stop(2, 13f), stop(50, 22f))),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
             ).withFilter(has("point_count"))
@@ -135,12 +135,12 @@ object MapLayers {
             SymbolLayer("photos-count", PHOTOS).withProperties(
                 textField(get("point_count_abbreviated")),
                 textFont(arrayOf("Noto Sans Bold")),
-                textSize(12f), textColor(Color.rgb(18, 21, 29)),
+                textSize(12f), textColor(Color.WHITE),
             ).withFilter(has("point_count"))
         )
         style.addLayer(
             CircleLayer(LAYER_PHOTO_POINTS, PHOTOS).withProperties(
-                circleColor(Color.rgb(127, 200, 248)), circleRadius(7f),
+                circleColor(Color.rgb(224, 33, 138)), circleRadius(7f),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
             ).withFilter(not(has("point_count")))
         )
@@ -148,7 +148,7 @@ object MapLayers {
         // Numbered pins for one trip: label is the photo's place in time order ("4" or "4–7").
         style.addLayer(
             CircleLayer(LAYER_TRIP_PHOTOS, TRIP_PHOTOS).withProperties(
-                circleColor(Color.rgb(127, 200, 248)), circleRadius(12f),
+                circleColor(Color.rgb(224, 33, 138)), circleRadius(12f),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
             )
         )
@@ -156,7 +156,7 @@ object MapLayers {
             SymbolLayer("trip-photos-label", TRIP_PHOTOS).withProperties(
                 textField(get("label")),
                 textFont(arrayOf("Noto Sans Bold")),
-                textSize(11f), textColor(Color.rgb(18, 21, 29)),
+                textSize(11f), textColor(Color.WHITE),
                 textAllowOverlap(true), textIgnorePlacement(true),
             )
         )
