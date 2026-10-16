@@ -13,11 +13,18 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+
+        // MapLibre ships native code for every ABI; phones only need arm64, the emulator x86_64.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.getByName("debug")
         }
     }
