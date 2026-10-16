@@ -28,7 +28,9 @@ import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.textColor
+import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.textField
+import org.maplibre.android.style.layers.PropertyFactory.textIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.textFont
 import org.maplibre.android.style.layers.PropertyFactory.textSize
 import org.maplibre.android.style.layers.PropertyFactory.visibility
@@ -45,12 +47,14 @@ object MapLayers {
     const val PHOTOS = "photos"
     const val REPLAY = "replay"
     const val REPLAY_HEAD = "replay-head"
+    const val TRIP_PHOTOS = "trip-photos"
 
     /** Zoom level where the frequency map switches from coarse to fine hexes. */
     const val HEX_SWITCH_ZOOM = 11.5f
 
     const val LAYER_PHOTO_CLUSTERS = "photos-clusters"
     const val LAYER_PHOTO_POINTS = "photos-points"
+    const val LAYER_TRIP_PHOTOS = "trip-photos-pins"
 
     private val layersBySource = mapOf(
         HEX_FINE to listOf("hex-fine-fill"),
@@ -59,11 +63,12 @@ object MapLayers {
         PHOTOS to listOf(LAYER_PHOTO_CLUSTERS, "photos-count", LAYER_PHOTO_POINTS),
         REPLAY to listOf("replay-line"),
         REPLAY_HEAD to listOf("replay-head"),
+        TRIP_PHOTOS to listOf(LAYER_TRIP_PHOTOS, "trip-photos-label"),
     )
 
     fun install(style: Style) {
         val empty = FeatureCollection.fromFeatures(emptyList())
-        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD).forEach {
+        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD, TRIP_PHOTOS).forEach {
             style.addSource(GeoJsonSource(it, empty))
         }
         style.addSource(
@@ -138,6 +143,22 @@ object MapLayers {
                 circleColor(Color.rgb(127, 200, 248)), circleRadius(7f),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
             ).withFilter(not(has("point_count")))
+        )
+
+        // Numbered pins for one trip: label is the photo's place in time order ("4" or "4–7").
+        style.addLayer(
+            CircleLayer(LAYER_TRIP_PHOTOS, TRIP_PHOTOS).withProperties(
+                circleColor(Color.rgb(127, 200, 248)), circleRadius(12f),
+                circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
+            )
+        )
+        style.addLayer(
+            SymbolLayer("trip-photos-label", TRIP_PHOTOS).withProperties(
+                textField(get("label")),
+                textFont(arrayOf("Noto Sans Bold")),
+                textSize(11f), textColor(Color.rgb(18, 21, 29)),
+                textAllowOverlap(true), textIgnorePlacement(true),
+            )
         )
 
         layersBySource.keys.forEach { show(style, it, false) }

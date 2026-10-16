@@ -25,7 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -49,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +95,12 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fitted by remember { mutableStateOf(false) }
+    val currentPhotos by rememberUpdatedState(photos)
+
+    // Pick up photos taken since the trip ended, and re-place existing ones.
+    LaunchedEffect(tripId) {
+        if (PhotoImporter.canRead(context)) vm.importPhotos { }
+    }
 
     val mediaLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -115,7 +122,16 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
     BackHandler(replaying) { replaying = false }
 
     Box(Modifier.fillMaxSize()) {
-        val handle = rememberMap(Modifier.fillMaxSize())
+        val handle = rememberMap(Modifier.fillMaxSize()) { h ->
+            h.map.addOnMapClickListener { latLng ->
+                val hit = h.map.queryRenderedFeatures(
+                    h.map.projection.toScreenLocation(latLng), MapLayers.LAYER_TRIP_PHOTOS,
+                ).firstOrNull() ?: return@addOnMapClickListener false
+                val index = hit.getNumberProperty("index")?.toInt() ?: return@addOnMapClickListener false
+                currentPhotos.getOrNull(index)?.let { viewing = it }
+                true
+            }
+        }
 
         if (handle != null) {
             LaunchedEffect(handle, routes, replaying) {
@@ -123,8 +139,8 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
                 MapLayers.show(handle.style, MapLayers.ROUTES, !replaying)
             }
             LaunchedEffect(handle, photos) {
-                MapLayers.set(handle.style, MapLayers.PHOTOS, MapData.photos(photos))
-                MapLayers.show(handle.style, MapLayers.PHOTOS, true)
+                MapLayers.set(handle.style, MapLayers.TRIP_PHOTOS, MapData.numberedPhotos(photos))
+                MapLayers.show(handle.style, MapLayers.TRIP_PHOTOS, true)
             }
             LaunchedEffect(handle, points) {
                 if (!fitted && points.isNotEmpty()) {
@@ -220,14 +236,24 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(photos, key = { it.id }) { photo ->
-                                AsyncImage(
-                                    model = photo.uri, contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(96.dp).clip(RoundedCornerShape(14.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { viewing = photo },
-                                )
+                            itemsIndexed(photos, key = { _, p -> p.id }) { i, photo ->
+                                Box(Modifier.size(96.dp).clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { viewing = photo }) {
+                                    AsyncImage(
+                                        model = photo.uri, contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    Text(
+                                        "${i + 1}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF12151D),
+                                        modifier = Modifier.padding(6.dp)
+                                            .background(Color(0xFF7FC8F8), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -250,6 +276,8 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
     viewing?.let { photo ->
         PhotoViewer(
             photo = photo,
+            number = photos.indexOfFirst { it.id == photo.id } + 1,
+            total = photos.size,
             onDismiss = { viewing = null },
             onRemove = { vm.hidePhoto(photo.id); viewing = null },
         )
@@ -291,7 +319,13 @@ private fun Stat(label: String, value: String) {
 }
 
 @Composable
-private fun PhotoViewer(photo: TripPhoto, onDismiss: () -> Unit, onRemove: () -> Unit) {
+private fun PhotoViewer(
+    photo: TripPhoto,
+    number: Int,
+    total: Int,
+    onDismiss: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss)) {
             AsyncImage(
@@ -304,7 +338,8 @@ private fun PhotoViewer(photo: TripPhoto, onDismiss: () -> Unit, onRemove: () ->
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    formatTime(photo.takenMs) + if (photo.lat == null) " · no location" else "",
+                    "$number of $total · " + formatTime(photo.takenMs) +
+                        if (photo.lat == null) " · no location" else "",
                     color = Color.White,
                 )
                 FilledTonalButton(onClick = onRemove) { Text("Remove from trip") }
