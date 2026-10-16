@@ -29,7 +29,6 @@ import kotlin.concurrent.thread
  */
 object HomeFence {
     private const val TAG = "HomeFence"
-    private const val FENCE_ID = "home"
     private const val CHANNEL = "home"
     private const val NOTIFY_LEFT = 2
     private const val NOTIFY_BACK = 3
@@ -38,24 +37,26 @@ object HomeFence {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Registers or removes the geofence to match the saved home spot. Safe to call any time. */
+    /** Re-registers one geofence per home spot that asks on leave. Safe to call any time. */
     @SuppressLint("MissingPermission")
     fun sync(context: Context) {
         val client = LocationServices.getGeofencingClient(context)
         val intent = pendingIntent(context)
         client.removeGeofences(intent)
-        val spot = context.homeSpot.spot.value ?: return
-        if (!spot.askOnLeave || !hasBackgroundLocation(context)) return
-        val fence = Geofence.Builder()
-            .setRequestId(FENCE_ID)
-            // Play services is unreliable below ~150 m.
-            .setCircularRegion(spot.lat, spot.lng, maxOf(spot.radiusM, 150f))
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
+        val spots = context.homeSpot.spots.value.filter { it.askOnLeave }
+        if (spots.isEmpty() || !hasBackgroundLocation(context)) return
+        val fences = spots.map { spot ->
+            Geofence.Builder()
+                .setRequestId(spot.id)
+                // Play services is unreliable below ~150 m.
+                .setCircularRegion(spot.lat, spot.lng, maxOf(spot.radiusM, 150f))
+                .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build()
+        }
         val request = GeofencingRequest.Builder()
             .setInitialTrigger(0)
-            .addGeofence(fence)
+            .addGeofences(fences)
             .build()
         runCatching {
             client.addGeofences(request, intent)
@@ -75,7 +76,7 @@ object HomeFence {
         )
     }
 
-    fun notifyLeftHome(context: Context) {
+    fun notifyLeftHome(context: Context, placeName: String) {
         channel(context)
         val start = PendingIntent.getForegroundService(
             context, 10,
@@ -88,7 +89,7 @@ object HomeFence {
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fog)
             .setContentTitle("Heading out?")
-            .setContentText("You just left home. Start a trip to record it.")
+            .setContentText("You just left $placeName. Start a trip to record it.")
             .setContentIntent(open)
             .setAutoCancel(true)
             .setTimeoutAfter(30 * 60_000L)
@@ -97,12 +98,12 @@ object HomeFence {
         notify(context, NOTIFY_LEFT, n)
     }
 
-    fun notifyBackHome(context: Context, tripName: String) {
+    fun notifyArrived(context: Context, placeName: String, tripName: String) {
         channel(context)
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFY_LEFT)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fog)
-            .setContentTitle("Welcome home")
+            .setContentTitle(if (placeName == "Home") "Welcome home" else "You're at $placeName")
             .setContentText("Trip ended and saved: $tripName")
             .setContentIntent(PendingIntent.getActivity(
                 context, 12, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
@@ -133,7 +134,8 @@ class HomeFenceReceiver : BroadcastReceiver() {
         val pending = goAsync()
         thread {
             try {
-                if (context.repository.activeTrip() == null) HomeFence.notifyLeftHome(context)
+                val place = event.triggeringGeofences?.firstNotNullOfOrNull { context.homeSpot.get(it.requestId) }
+                if (context.repository.activeTrip() == null) HomeFence.notifyLeftHome(context, place?.name ?: "home")
             } finally {
                 pending.finish()
             }
@@ -141,7 +143,7 @@ class HomeFenceReceiver : BroadcastReceiver() {
     }
 }
 
-/** Geofences do not survive a reboot or an app update; put the home fence back. */
+/** Geofences do not survive a reboot or an app update; put the home fences back. */
 class RefenceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {

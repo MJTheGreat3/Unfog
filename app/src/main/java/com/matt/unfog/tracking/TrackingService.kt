@@ -120,7 +120,7 @@ class TrackingService : Service() {
             val pts = repo.points(active.id)
             last = pts.lastOrNull()
             distance = Geo.pathLength(pts)
-            leftHome = homeSpot.spot.value?.let { home -> pts.any { outsideHome(home, it) } } ?: false
+            leftHome = pts.any(::awayFromHomes)
             HomeFence.cancelLeftHome(this@TrackingService)
             updateNotification()
             requestUpdates()
@@ -167,18 +167,24 @@ class TrackingService : Service() {
         checkHome(p)
     }
 
-    private fun outsideHome(home: HomeSpot, p: TrackPoint) =
-        Geo.distance(home.lat, home.lng, p.lat, p.lng) > home.radiusM + HOME_MARGIN_M
-
-    /** Ends the trip when you come back inside the home spot after having left it. */
-    private fun checkHome(p: TrackPoint) {
-        val home = homeSpot.spot.value ?: return
-        if (outsideHome(home, p)) leftHome = true
-        if (!home.autoStop || !leftHome || stopping) return
-        if (Geo.distance(home.lat, home.lng, p.lat, p.lng) <= home.radiusM) stopTrip(arrivedHome = true)
+    /** Clearly outside every home spot. */
+    private fun awayFromHomes(p: TrackPoint): Boolean {
+        val spots = homeSpot.spots.value
+        return spots.isNotEmpty() && spots.all { it.distanceTo(p.lat, p.lng) > it.radiusM + HOME_MARGIN_M }
     }
 
-    private fun stopTrip(arrivedHome: Boolean = false) {
+    /**
+     * Ends the trip on arriving at any home spot, once the trip has been away from all of
+     * them. So a trip from home to work ends at work, but one started at home doesn't end there.
+     */
+    private fun checkHome(p: TrackPoint) {
+        if (awayFromHomes(p)) leftHome = true
+        if (!leftHome || stopping) return
+        val arrived = homeSpot.spots.value.firstOrNull { it.autoStop && it.distanceTo(p.lat, p.lng) <= it.radiusM }
+        if (arrived != null) stopTrip(arrivedAt = arrived)
+    }
+
+    private fun stopTrip(arrivedAt: HomeSpot? = null) {
         if (stopping) return
         stopping = true
         fused.removeLocationUpdates(callback)
@@ -194,7 +200,9 @@ class TrackingService : Service() {
                 repo.finishTrip(t.id, end, Geo.pathLength(raw))
                 autoName(t, raw)?.let { repo.renameTrip(t.id, it) }
                 runCatching { PhotoImporter.import(this@TrackingService, repo.trip(t.id)!!) }
-                if (arrivedHome) HomeFence.notifyBackHome(this@TrackingService, repo.trip(t.id)?.name ?: t.name)
+                if (arrivedAt != null) {
+                    HomeFence.notifyArrived(this@TrackingService, arrivedAt.name, repo.trip(t.id)?.name ?: t.name)
+                }
             }
             trip = null
             TravelMode.setRunning(false)
