@@ -1,6 +1,7 @@
 package com.matt.unfog.ui
 
 import android.graphics.Color
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.expressions.Expression.get
 import org.maplibre.android.style.expressions.Expression.has
 import org.maplibre.android.style.expressions.Expression.interpolate
@@ -48,6 +49,7 @@ object MapLayers {
     const val REPLAY = "replay"
     const val REPLAY_HEAD = "replay-head"
     const val TRIP_PHOTOS = "trip-photos"
+    const val HOME = "home"
 
     /** Zoom level where the frequency map switches from coarse to fine hexes. */
     const val HEX_SWITCH_ZOOM = 11.5f
@@ -64,11 +66,12 @@ object MapLayers {
         REPLAY to listOf("replay-line"),
         REPLAY_HEAD to listOf("replay-head"),
         TRIP_PHOTOS to listOf(LAYER_TRIP_PHOTOS, "trip-photos-label"),
+        HOME to listOf("home-fill", "home-outline", "home-centre"),
     )
 
     fun install(style: Style) {
         val empty = FeatureCollection.fromFeatures(emptyList())
-        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD, TRIP_PHOTOS).forEach {
+        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD, TRIP_PHOTOS, HOME).forEach {
             style.addSource(GeoJsonSource(it, empty))
         }
         style.addSource(
@@ -76,6 +79,23 @@ object MapLayers {
                 PHOTOS, empty,
                 GeoJsonOptions().withCluster(true).withClusterRadius(40).withClusterMaxZoom(16),
             )
+        )
+
+        // Home spot sits under everything else.
+        val homeGreen = Color.rgb(46, 170, 110)
+        style.addLayer(
+            FillLayer("home-fill", HOME).withProperties(fillColor(homeGreen), fillOpacity(0.18f))
+                .withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Polygon")))
+        )
+        style.addLayer(
+            LineLayer("home-outline", HOME).withProperties(lineColor(homeGreen), lineWidth(2f))
+                .withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Polygon")))
+        )
+        style.addLayer(
+            CircleLayer("home-centre", HOME).withProperties(
+                circleColor(homeGreen), circleRadius(6f),
+                circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
+            ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point")))
         )
 
         val heat = interpolate(

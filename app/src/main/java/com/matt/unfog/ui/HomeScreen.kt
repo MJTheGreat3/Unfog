@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
@@ -34,6 +35,8 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,7 +57,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.Trip
+import com.matt.unfog.homeSpot
 import com.matt.unfog.geo.TransportMode
 import com.matt.unfog.photos.PhotoImporter
 import com.matt.unfog.tracking.TravelMode
@@ -77,6 +82,10 @@ fun HomeScreen(
     val tripCount by vm.tripCount.collectAsStateWithLifecycle()
     var mode by rememberSaveable { mutableStateOf(MapMode.Explored) }
     var fitted by remember { mutableStateOf(false) }
+    val home by context.homeSpot.spot.collectAsStateWithLifecycle()
+    var homeDialog by remember { mutableStateOf(false) }
+    var pickingHome by remember { mutableStateOf(false) }
+    val picking by rememberUpdatedState(pickingHome)
     val currentMode by rememberUpdatedState(mode)
     val openTrip by rememberUpdatedState(onOpenTrip)
     var locationGranted by remember { mutableStateOf(TravelMode.hasLocationPermission(context)) }
@@ -119,6 +128,17 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
         val handle = rememberMap(Modifier.fillMaxSize()) { h ->
             h.map.addOnMapClickListener { latLng ->
+                if (picking) {
+                    val existing = context.homeSpot.spot.value
+                    saveHomeSpot(
+                        context,
+                        existing?.copy(lat = latLng.latitude, lng = latLng.longitude)
+                            ?: HomeSpot(latLng.latitude, latLng.longitude),
+                    )
+                    pickingHome = false
+                    homeDialog = true
+                    return@addOnMapClickListener true
+                }
                 if (currentMode != MapMode.Photos) return@addOnMapClickListener false
                 val pt = h.map.projection.toScreenLocation(latLng)
                 val hits = h.map.queryRenderedFeatures(
@@ -162,6 +182,10 @@ fun HomeScreen(
                     }
                 }
             }
+            LaunchedEffect(handle, home) {
+                MapLayers.set(handle.style, MapLayers.HOME, MapData.home(home))
+                MapLayers.show(handle.style, MapLayers.HOME, home != null)
+            }
             LaunchedEffect(handle, mode) {
                 MapLayers.show(handle.style, MapLayers.HEX_FINE, mode == MapMode.Frequency)
                 MapLayers.show(handle.style, MapLayers.HEX_COARSE, mode == MapMode.Frequency)
@@ -197,6 +221,10 @@ fun HomeScreen(
                         handle.map.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 14.0))
                     }
                 }) { Icon(Icons.Rounded.MyLocation, "My location") }
+                FilledTonalIconButton(onClick = { homeDialog = true }) {
+                    Icon(Icons.Rounded.Home, "Home spot",
+                        tint = if (home != null) Color(0xFF2EAA6E) else LocalContentColor.current)
+                }
                 FilledTonalIconButton(onClick = onOpenTrips) {
                     Icon(Icons.AutoMirrored.Rounded.List, "Trips")
                 }
@@ -217,7 +245,22 @@ fun HomeScreen(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            ModeInfo(mode, state, tripCount)
+            if (pickingHome) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF2EAA6E),
+                    contentColor = Color.White,
+                ) {
+                    Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Tap the map where home is", style = MaterialTheme.typography.titleSmall)
+                        TextButton(onClick = { pickingHome = false; homeDialog = true }) {
+                            Text("Cancel", color = Color.White)
+                        }
+                    }
+                }
+            } else {
+                ModeInfo(mode, state, tripCount)
+            }
         }
 
         Box(
@@ -229,6 +272,13 @@ fun HomeScreen(
             TravelCard(active, running, onStart = ::startTravel, onStop = { TravelMode.stop(context) },
                 onOpen = { active?.let { onOpenTrip(it.id) } })
         }
+    }
+
+    if (homeDialog) {
+        HomeSpotDialog(
+            onDismiss = { homeDialog = false },
+            onPickOnMap = { homeDialog = false; pickingHome = true },
+        )
     }
 }
 

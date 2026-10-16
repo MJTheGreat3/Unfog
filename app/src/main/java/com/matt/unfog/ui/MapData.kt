@@ -1,5 +1,6 @@
 package com.matt.unfog.ui
 
+import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.TrackPoint
 import com.matt.unfog.data.TripPhoto
 import com.matt.unfog.geo.Geo
@@ -121,6 +122,21 @@ object MapData {
         }
         close(photos.lastIndex)
         return FeatureCollection.fromFeatures(features)
+    }
+
+    /** The home spot as a filled circle plus a centre point. Empty when there is no home. */
+    fun home(spot: HomeSpot?): FeatureCollection {
+        if (spot == null) return FeatureCollection.fromFeatures(emptyList())
+        val dLat = Math.toDegrees(spot.radiusM / 6_371_008.8)
+        val dLng = dLat / kotlin.math.cos(Math.toRadians(spot.lat))
+        val ring = (0..64).map { i ->
+            val a = 2 * Math.PI * i / 64
+            Point.fromLngLat(spot.lng + dLng * kotlin.math.cos(a), spot.lat + dLat * kotlin.math.sin(a))
+        }
+        return FeatureCollection.fromFeatures(listOf(
+            Feature.fromGeometry(Polygon.fromLngLats(listOf(ring))),
+            Feature.fromGeometry(Point.fromLngLat(spot.lng, spot.lat)),
+        ))
     }
 
     /** A continuous stretch of track, with its bounding box for cheap culling. */
