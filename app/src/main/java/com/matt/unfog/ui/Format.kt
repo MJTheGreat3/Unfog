@@ -22,3 +22,5 @@ fun formatDuration(ms: Long): String {
 fun formatDate(ms: Long): String = SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date(ms))
 
 fun formatTime(ms: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
+
+fun plural(n: Int, word: String) = "$n $word" + if (n == 1) "" else "s"

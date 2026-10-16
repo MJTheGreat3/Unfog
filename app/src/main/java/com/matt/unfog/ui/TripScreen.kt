@@ -99,14 +99,14 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         if (PhotoImporter.canRead(context)) {
-            vm.importPhotos { message = if (it == 0) "No new photos found" else "Added $it photos" }
+            vm.importPhotos { message = if (it == 0) "No new photos found" else "Added ${plural(it, "photo")}" }
         } else {
             message = "Photo access was denied"
         }
     }
     fun findPhotos() {
         if (PhotoImporter.canRead(context)) {
-            vm.importPhotos { message = if (it == 0) "No new photos found" else "Added $it photos" }
+            vm.importPhotos { message = if (it == 0) "No new photos found" else "Added ${plural(it, "photo")}" }
         } else {
             mediaLauncher.launch(PhotoImporter.mediaPermissions())
         }

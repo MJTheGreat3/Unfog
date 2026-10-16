@@ -93,7 +93,7 @@ private fun TripRow(trip: Trip, onClick: () -> Unit) {
             )
             val duration = (trip.endMs ?: System.currentTimeMillis()) - trip.startMs
             Text(
-                "${formatKm(trip.distanceM)} · ${formatDuration(duration)} · ${trip.photoCount} photos",
+                "${formatKm(trip.distanceM)} · ${formatDuration(duration)} · ${plural(trip.photoCount, "photo")}",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 6.dp),
             )

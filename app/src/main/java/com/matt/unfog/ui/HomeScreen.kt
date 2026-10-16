@@ -143,9 +143,9 @@ fun HomeScreen(
                 MapLayers.set(handle.style, MapLayers.ROUTES, s.routes)
                 MapLayers.set(handle.style, MapLayers.PHOTOS, s.photos)
                 if (!fitted) {
-                    fitted = true
                     val b = s.bounds
                     if (b != null) {
+                        fitted = true
                         runCatching {
                             handle.map.moveCamera(CameraUpdateFactory.newLatLngBounds(
                                 LatLngBounds.from(b[2], b[3], b[0], b[1]), 120,
@@ -156,6 +156,7 @@ fun HomeScreen(
                         }
                     } else {
                         handle.lastKnown()?.let {
+                            fitted = true
                             handle.map.moveCamera(CameraUpdateFactory.newLatLngZoom(it, 13.0))
                         }
                     }
@@ -179,10 +180,17 @@ fun HomeScreen(
                 .fillMaxWidth()
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Unfog", style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground,
-                )
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Text(
+                        "Unfog", style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 FilledTonalIconButton(onClick = {
                     handle?.lastKnown()?.let {
@@ -230,6 +238,7 @@ private fun ModeInfo(mode: MapMode, state: HomeViewModel.MapState?, tripCount: I
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             when (mode) {
@@ -241,7 +250,7 @@ private fun ModeInfo(mode: MapMode, state: HomeViewModel.MapState?, tripCount: I
                     )
                     if (explored != null && explored.cells > 0) {
                         Text(
-                            "$tripCount trips · ${explored.days} days on the road",
+                            "${plural(tripCount, "trip")} · ${plural(explored.days, "day")} on the road",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -329,14 +338,16 @@ private fun TravelCard(
                     Text(active.name, style = MaterialTheme.typography.titleMedium)
                 }
                 Text(
-                    "${formatKm(active.distanceM)} · ${formatDuration(now - active.startMs)} · ${active.photoCount} photos",
+                    "${formatKm(active.distanceM)} · ${formatDuration(now - active.startMs)} · ${plural(active.photoCount, "photo")}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Button(
                 onClick = onStop,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF0567A)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF0567A), contentColor = Color.White,
+                ),
             ) {
                 Icon(Icons.Rounded.Stop, null)
                 Spacer(Modifier.width(4.dp))

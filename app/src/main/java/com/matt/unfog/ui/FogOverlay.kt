@@ -26,7 +26,7 @@ fun FogOverlay(
     map: MapLibreMap,
     holes: List<LatLng>,
     modifier: Modifier = Modifier,
-    radiusM: Double = 90.0,
+    radiusM: Double = 140.0,
     fog: Color = Color(0xE6161A23),
 ) {
     var frame by remember { mutableIntStateOf(0) }
@@ -48,7 +48,7 @@ fun FogOverlay(
         val bounds = projection.visibleRegion.latLngBounds
         val mpp = projection.getMetersPerPixelAtLatitude(map.cameraPosition.target?.latitude ?: 0.0)
         // Never shrink holes below a few pixels, or the explored area vanishes when zoomed out.
-        val r = (radiusM / mpp).toFloat().coerceAtLeast(3f)
+        val r = (radiusM / mpp).toFloat().coerceAtLeast(5f)
         val padLat = (bounds.latitudeSpan * 0.1)
         val padLng = (bounds.longitudeSpan * 0.1)
         for (h in holes) {

@@ -23,7 +23,7 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 
-const val STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
+const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 
 /** A loaded map and its style. Both are only valid while the composable is on screen. */
 class MapHandle(val map: MapLibreMap, val style: Style) {
