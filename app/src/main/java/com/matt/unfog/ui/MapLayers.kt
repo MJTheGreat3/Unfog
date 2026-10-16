@@ -31,6 +31,9 @@ import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.textColor
 import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.textField
+import org.maplibre.android.style.layers.PropertyFactory.textHaloColor
+import org.maplibre.android.style.layers.PropertyFactory.textHaloWidth
+import org.maplibre.android.style.layers.PropertyFactory.textOffset
 import org.maplibre.android.style.layers.PropertyFactory.textIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.textFont
 import org.maplibre.android.style.layers.PropertyFactory.textSize
@@ -66,7 +69,7 @@ object MapLayers {
         REPLAY to listOf("replay-line"),
         REPLAY_HEAD to listOf("replay-head"),
         TRIP_PHOTOS to listOf(LAYER_TRIP_PHOTOS, "trip-photos-label"),
-        HOME to listOf("home-fill", "home-outline", "home-centre"),
+        HOME to listOf("home-fill", "home-outline", "home-centre", "home-label"),
     )
 
     fun install(style: Style) {
@@ -95,6 +98,15 @@ object MapLayers {
             CircleLayer("home-centre", HOME).withProperties(
                 circleColor(homeGreen), circleRadius(6f),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
+            ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point")))
+        )
+        style.addLayer(
+            SymbolLayer("home-label", HOME).withProperties(
+                textField(get("name")),
+                textFont(arrayOf("Noto Sans Bold")),
+                textSize(12f), textColor(homeGreen),
+                textHaloColor(Color.WHITE), textHaloWidth(1.5f),
+                textOffset(arrayOf(0f, 1.3f)),
             ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point")))
         )
 

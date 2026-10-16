@@ -57,7 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.Trip
 import com.matt.unfog.homeSpot
 import com.matt.unfog.geo.TransportMode
@@ -82,10 +81,15 @@ fun HomeScreen(
     val tripCount by vm.tripCount.collectAsStateWithLifecycle()
     var mode by rememberSaveable { mutableStateOf(MapMode.Explored) }
     var fitted by remember { mutableStateOf(false) }
-    val home by context.homeSpot.spot.collectAsStateWithLifecycle()
+    val homes by context.homeSpot.spots.collectAsStateWithLifecycle()
     var homeDialog by remember { mutableStateOf(false) }
+    // Spot to open in the editor when the dialog shows.
+    var editHomeId by remember { mutableStateOf<String?>(null) }
     var pickingHome by remember { mutableStateOf(false) }
+    // Spot being moved by tapping the map; null while picking means adding a new one.
+    var pickTarget by remember { mutableStateOf<String?>(null) }
     val picking by rememberUpdatedState(pickingHome)
+    val pickingId by rememberUpdatedState(pickTarget)
     val currentMode by rememberUpdatedState(mode)
     val openTrip by rememberUpdatedState(onOpenTrip)
     var locationGranted by remember { mutableStateOf(TravelMode.hasLocationPermission(context)) }
@@ -129,13 +133,12 @@ fun HomeScreen(
         val handle = rememberMap(Modifier.fillMaxSize()) { h ->
             h.map.addOnMapClickListener { latLng ->
                 if (picking) {
-                    val existing = context.homeSpot.spot.value
-                    saveHomeSpot(
-                        context,
-                        existing?.copy(lat = latLng.latitude, lng = latLng.longitude)
-                            ?: HomeSpot(latLng.latitude, latLng.longitude),
-                    )
+                    val spot = pickingId?.let { context.homeSpot.get(it) }
+                        ?.copy(lat = latLng.latitude, lng = latLng.longitude)
+                        ?: newHomeSpot(context, latLng.latitude, latLng.longitude)
+                    saveHomeSpot(context, spot)
                     pickingHome = false
+                    editHomeId = spot.id
                     homeDialog = true
                     return@addOnMapClickListener true
                 }
@@ -182,9 +185,9 @@ fun HomeScreen(
                     }
                 }
             }
-            LaunchedEffect(handle, home) {
-                MapLayers.set(handle.style, MapLayers.HOME, MapData.home(home))
-                MapLayers.show(handle.style, MapLayers.HOME, home != null)
+            LaunchedEffect(handle, homes) {
+                MapLayers.set(handle.style, MapLayers.HOME, MapData.homes(homes))
+                MapLayers.show(handle.style, MapLayers.HOME, homes.isNotEmpty())
             }
             LaunchedEffect(handle, mode) {
                 MapLayers.show(handle.style, MapLayers.HEX_FINE, mode == MapMode.Frequency)
@@ -221,9 +224,9 @@ fun HomeScreen(
                         handle.map.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 14.0))
                     }
                 }) { Icon(Icons.Rounded.MyLocation, "My location") }
-                FilledTonalIconButton(onClick = { homeDialog = true }) {
-                    Icon(Icons.Rounded.Home, "Home spot",
-                        tint = if (home != null) Color(0xFF2EAA6E) else LocalContentColor.current)
+                FilledTonalIconButton(onClick = { editHomeId = null; homeDialog = true }) {
+                    Icon(Icons.Rounded.Home, "Places",
+                        tint = if (homes.isNotEmpty()) Color(0xFF2EAA6E) else LocalContentColor.current)
                 }
                 FilledTonalIconButton(onClick = onOpenTrips) {
                     Icon(Icons.AutoMirrored.Rounded.List, "Trips")
@@ -252,8 +255,10 @@ fun HomeScreen(
                     contentColor = Color.White,
                 ) {
                     Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Tap the map where home is", style = MaterialTheme.typography.titleSmall)
-                        TextButton(onClick = { pickingHome = false; homeDialog = true }) {
+                        val what = pickTarget?.let { context.homeSpot.get(it)?.name } ?: "the new place"
+                        Text("Tap the map to put $what", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f, fill = false))
+                        TextButton(onClick = { pickingHome = false; editHomeId = pickTarget; homeDialog = true }) {
                             Text("Cancel", color = Color.White)
                         }
                     }
@@ -276,8 +281,9 @@ fun HomeScreen(
 
     if (homeDialog) {
         HomeSpotDialog(
+            initialEditId = editHomeId,
             onDismiss = { homeDialog = false },
-            onPickOnMap = { homeDialog = false; pickingHome = true },
+            onPickOnMap = { id -> homeDialog = false; pickTarget = id; pickingHome = true },
         )
     }
 }

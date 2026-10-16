@@ -124,19 +124,24 @@ object MapData {
         return FeatureCollection.fromFeatures(features)
     }
 
-    /** The home spot as a filled circle plus a centre point. Empty when there is no home. */
-    fun home(spot: HomeSpot?): FeatureCollection {
-        if (spot == null) return FeatureCollection.fromFeatures(emptyList())
+    /** Each home spot as a filled circle plus a labelled centre point. */
+    fun homes(spots: List<HomeSpot>): FeatureCollection =
+        FeatureCollection.fromFeatures(spots.flatMap { spot -> homeFeatures(spot) })
+
+    private fun homeFeatures(spot: HomeSpot): List<Feature> {
         val dLat = Math.toDegrees(spot.radiusM / 6_371_008.8)
         val dLng = dLat / kotlin.math.cos(Math.toRadians(spot.lat))
         val ring = (0..64).map { i ->
             val a = 2 * Math.PI * i / 64
             Point.fromLngLat(spot.lng + dLng * kotlin.math.cos(a), spot.lat + dLat * kotlin.math.sin(a))
         }
-        return FeatureCollection.fromFeatures(listOf(
+        return listOf(
             Feature.fromGeometry(Polygon.fromLngLats(listOf(ring))),
-            Feature.fromGeometry(Point.fromLngLat(spot.lng, spot.lat)),
-        ))
+            Feature.fromGeometry(Point.fromLngLat(spot.lng, spot.lat)).apply {
+                addStringProperty("name", spot.name)
+                addStringProperty("id", spot.id)
+            },
+        )
     }
 
     /** A continuous stretch of track, with its bounding box for cheap culling. */

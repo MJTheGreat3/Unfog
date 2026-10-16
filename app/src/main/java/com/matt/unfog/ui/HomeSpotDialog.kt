@@ -10,11 +10,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,27 +47,49 @@ import com.matt.unfog.tracking.HomeFence
 import com.matt.unfog.tracking.TravelMode
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 
-/** Saves [spot] and brings the system geofence in line with it. */
-fun saveHomeSpot(context: Context, spot: HomeSpot?) {
-    context.homeSpot.set(spot)
+/** Saves [spot] and brings the system geofences in line. */
+fun saveHomeSpot(context: Context, spot: HomeSpot) {
+    context.homeSpot.put(spot)
     HomeFence.sync(context)
+}
+
+fun removeHomeSpot(context: Context, id: String) {
+    context.homeSpot.remove(id)
+    HomeFence.sync(context)
+}
+
+/** A fresh spot at the given position, named "Home" if it's the first one. */
+fun newHomeSpot(context: Context, lat: Double, lng: Double): HomeSpot {
+    val count = context.homeSpot.spots.value.size
+    return HomeSpot(lat, lng, name = if (count == 0) "Home" else "Place ${count + 1}")
 }
 
 @SuppressLint("MissingPermission")
 private suspend fun currentLocation(context: Context): Pair<Double, Double>? {
     if (!TravelMode.hasLocationPermission(context)) return null
     val client = LocationServices.getFusedLocationProviderClient(context)
-    val loc = runCatching { client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await() }
-        .getOrNull() ?: runCatching { client.lastLocation.await() }.getOrNull()
+    val loc = withTimeoutOrNull(20_000) {
+        runCatching { client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await() }.getOrNull()
+    } ?: runCatching { client.lastLocation.await() }.getOrNull()
     return loc?.let { it.latitude to it.longitude }
 }
 
+/**
+ * Lists the saved places and edits one. [onPickOnMap] hands control to the map to place a spot:
+ * with an id to move that spot, or null to add a new one.
+ */
 @Composable
-fun HomeSpotDialog(onDismiss: () -> Unit, onPickOnMap: () -> Unit) {
+fun HomeSpotDialog(
+    initialEditId: String?,
+    onDismiss: () -> Unit,
+    onPickOnMap: (String?) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val spot by context.homeSpot.spot.collectAsStateWithLifecycle()
+    val spots by context.homeSpot.spots.collectAsStateWithLifecycle()
+    var editingId by remember { mutableStateOf(initialEditId) }
     var background by remember { mutableStateOf(HomeFence.hasBackgroundLocation(context)) }
     var locating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -80,7 +110,8 @@ fun HomeSpotDialog(onDismiss: () -> Unit, onPickOnMap: () -> Unit) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    fun useMyLocation() {
+    /** Puts the spot with [id] (or a new one, when null) at the current location. */
+    fun placeHere(id: String?) {
         if (!TravelMode.hasLocationPermission(context)) {
             fineLauncher.launch(arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -94,70 +125,136 @@ fun HomeSpotDialog(onDismiss: () -> Unit, onPickOnMap: () -> Unit) {
             locating = false
             if (here == null) {
                 error = "Couldn't get your location. Try again outdoors, or pick on the map."
-            } else {
-                val base = spot ?: HomeSpot(here.first, here.second)
-                saveHomeSpot(context, base.copy(lat = here.first, lng = here.second))
+                return@launch
             }
+            val spot = id?.let { context.homeSpot.get(it) }?.copy(lat = here.first, lng = here.second)
+                ?: newHomeSpot(context, here.first, here.second)
+            saveHomeSpot(context, spot)
+            editingId = spot.id
         }
     }
 
+    val editing = spots.firstOrNull { it.id == editingId }
+    val needsBackground = !background && spots.any { it.askOnLeave }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Home spot") },
+        title = { Text(if (editing == null) "Places" else "Edit place") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val s = spot
-                if (s == null) {
-                    Text(
-                        "Set where home is. Unfog can offer to start a trip when you leave, " +
-                            "and end it when you get back.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (editing == null) {
+                    if (spots.isEmpty()) {
+                        Text(
+                            "Save home, work or anywhere you return to. Unfog can offer to start " +
+                                "a trip when you leave one, and end it when you arrive at one.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    spots.forEach { spot ->
+                        Surface(
+                            onClick = { editingId = spot.id },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(spot.name, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        listOfNotNull(
+                                            "${spot.radiusM.toInt()} m",
+                                            "asks when leaving".takeIf { spot.askOnLeave },
+                                            "ends trips".takeIf { spot.autoStop },
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null)
+                            }
+                        }
+                    }
+                    if (needsBackground) BackgroundNotice { backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+                    FilledTonalButton(
+                        onClick = { placeHere(null) }, enabled = !locating,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (locating) "Locating…" else "Add my current location") }
+                    OutlinedButton(onClick = { onPickOnMap(null) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Add by tapping the map")
+                    }
                 } else {
-                    var radius by remember(s.radiusM) { mutableFloatStateOf(s.radiusM) }
+                    var name by remember(editing.id) { mutableStateOf(editing.name) }
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // Saved when leaving the editor, so typing doesn't rewrite prefs per keystroke.
+                    val id = editing.id
+                    fun commitName() {
+                        // Read the stored spot, not [editing], which may predate other changes.
+                        val stored = context.homeSpot.get(id) ?: return
+                        if (name.isNotBlank() && name.trim() != stored.name) {
+                            saveHomeSpot(context, stored.copy(name = name.trim()))
+                        }
+                    }
+                    var radius by remember(editing.id, editing.radiusM) { mutableFloatStateOf(editing.radiusM) }
                     Text("Radius: ${radius.toInt()} m", style = MaterialTheme.typography.labelLarge)
                     Slider(
                         value = radius,
                         onValueChange = { radius = it },
-                        onValueChangeFinished = { saveHomeSpot(context, s.copy(radiusM = radius)) },
+                        onValueChangeFinished = { saveHomeSpot(context, editing.copy(radiusM = radius)) },
                         valueRange = 100f..600f,
                         steps = 9,
                     )
-                    ToggleRow("Ask to start a trip when I leave", s.askOnLeave) {
-                        saveHomeSpot(context, s.copy(askOnLeave = it))
+                    ToggleRow("Ask to start a trip when I leave", editing.askOnLeave) {
+                        saveHomeSpot(context, editing.copy(askOnLeave = it))
                         if (it && !background) backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                     }
-                    if (s.askOnLeave && !background) {
-                        Text(
-                            "Needs location access set to \"Allow all the time\" so Unfog notices " +
-                                "you leaving while it's closed.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        OutlinedButton(onClick = {
-                            backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                        }) { Text("Allow all the time") }
+                    if (editing.askOnLeave && !background) {
+                        BackgroundNotice { backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
                     }
-                    ToggleRow("End the trip when I get home", s.autoStop) {
-                        saveHomeSpot(context, s.copy(autoStop = it))
+                    ToggleRow("End the trip when I arrive", editing.autoStop) {
+                        saveHomeSpot(context, editing.copy(autoStop = it))
                     }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = ::useMyLocation, enabled = !locating) {
-                        Text(if (locating) "Locating…" else if (s == null) "Use my location" else "Move here")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = { commitName(); placeHere(editing.id) }, enabled = !locating) {
+                            Text(if (locating) "Locating…" else "Move here")
+                        }
+                        OutlinedButton(onClick = { commitName(); onPickOnMap(editing.id) }) { Text("Move on map") }
                     }
-                    OutlinedButton(onClick = onPickOnMap) { Text("Pick on map") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { commitName(); editingId = null }) { Text("All places") }
+                        TextButton(onClick = { removeHomeSpot(context, editing.id); editingId = null }) {
+                            Text("Remove", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    // Persist the name if the dialog is closed from here.
+                    androidx.compose.runtime.DisposableEffect(editing.id) { onDispose { commitName() } }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = {
-            if (spot != null) {
-                TextButton(onClick = { saveHomeSpot(context, null) }) { Text("Remove home") }
-            }
-        },
     )
+}
+
+@Composable
+private fun BackgroundNotice(onAllow: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "To notice you leaving while Unfog is closed, location access must be set to " +
+                "\"Allow all the time\".",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        OutlinedButton(onClick = onAllow) { Text("Allow all the time") }
+    }
 }
 
 @Composable
