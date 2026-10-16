@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import org.maplibre.android.geometry.LatLng
 import org.maplibre.geojson.FeatureCollection
 
 enum class MapMode(val label: String) {
@@ -28,7 +27,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = app.repository
 
     class MapState(
-        val holes: List<LatLng>,
+        val fog: List<MapData.FogPath>,
         val frequency: MapData.Frequency,
         val routes: FeatureCollection,
         val photos: FeatureCollection,
@@ -47,7 +46,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         repo.observeAllPoints(), repo.observeAllPhotos(),
     ) { points, photos ->
         MapState(
-            holes = MapData.fogHoles(points),
+            fog = MapData.fogPaths(points),
             frequency = MapData.frequency(points),
             routes = MapData.routes(points),
             photos = MapData.photos(photos),

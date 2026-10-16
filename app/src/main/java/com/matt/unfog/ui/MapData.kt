@@ -19,7 +19,6 @@ object MapData {
 
     private val fineGrid = HexGrid(180.0)
     private val coarseGrid = HexGrid(2_000.0)
-    private val fogGrid = HexGrid(30.0)
     private val exploredGrid = HexGrid(60.0)
 
     class Frequency(val fine: FeatureCollection, val coarse: FeatureCollection)
@@ -93,12 +92,63 @@ object MapData {
             }
         })
 
-    /** Centres of small cells you have passed through: holes to punch in the fog. */
-    fun fogHoles(points: List<TrackPoint>): List<LatLng> =
-        Geo.densify(points, 25.0)
-            .map { fogGrid.cellOf(it.lat, it.lng) }
-            .distinct()
-            .map { fogGrid.center(it).let { (lat, lng) -> LatLng(lat, lng) } }
+    /**
+     * One pin per place in a trip, numbered by time order so the labels match the photo strip
+     * and the replay. Consecutive photos within [mergeM] of each other share a pin ("4–7").
+     */
+    fun numberedPhotos(photos: List<TripPhoto>, mergeM: Double = 40.0): FeatureCollection {
+        val features = mutableListOf<Feature>()
+        var groupStart = -1
+        fun close(end: Int) {
+            if (groupStart < 0) return
+            val first = photos[groupStart]
+            val label = if (end == groupStart) "${groupStart + 1}" else "${groupStart + 1}–${end + 1}"
+            features += Feature.fromGeometry(Point.fromLngLat(first.lng!!, first.lat!!)).apply {
+                addStringProperty("label", label)
+                addNumberProperty("index", groupStart)
+            }
+            groupStart = -1
+        }
+        for (i in photos.indices) {
+            val p = photos[i]
+            if (p.lat == null || p.lng == null) {
+                close(i - 1)
+                continue
+            }
+            val start = photos.getOrNull(groupStart)
+            if (start != null && Geo.distance(start.lat!!, start.lng!!, p.lat, p.lng) > mergeM) close(i - 1)
+            if (groupStart < 0) groupStart = i
+        }
+        close(photos.lastIndex)
+        return FeatureCollection.fromFeatures(features)
+    }
+
+    /** A continuous stretch of track, with its bounding box for cheap culling. */
+    class FogPath(
+        val points: List<LatLng>,
+        val south: Double, val west: Double, val north: Double, val east: Double,
+    )
+
+    /** Tracks split wherever the trip changes or the signal jumps: what the fog is cleared along. */
+    fun fogPaths(points: List<TrackPoint>): List<FogPath> {
+        val out = mutableListOf<FogPath>()
+        var run = mutableListOf<TrackPoint>()
+        fun flush() {
+            if (run.isEmpty()) return
+            out += FogPath(
+                run.map { LatLng(it.lat, it.lng) },
+                run.minOf { it.lat }, run.minOf { it.lng }, run.maxOf { it.lat }, run.maxOf { it.lng },
+            )
+            run = mutableListOf()
+        }
+        for (p in points) {
+            val prev = run.lastOrNull()
+            if (prev != null && (prev.tripId != p.tripId || Geo.isJump(prev, p))) flush()
+            run += p
+        }
+        flush()
+        return out
+    }
 
     class Explored(val areaKm2: Double, val cells: Int, val days: Int, val trips: Int)
 

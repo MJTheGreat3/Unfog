@@ -169,7 +169,7 @@ fun HomeScreen(
                 MapLayers.show(handle.style, MapLayers.PHOTOS, mode == MapMode.Photos)
             }
             if (mode == MapMode.Explored) {
-                FogOverlay(handle.map, state?.holes.orEmpty(), Modifier.fillMaxSize())
+                FogOverlay(handle.map, state?.fog.orEmpty(), Modifier.fillMaxSize())
             }
         }
 
