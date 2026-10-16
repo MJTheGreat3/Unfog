@@ -25,10 +25,12 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.matt.unfog.MainActivity
 import com.matt.unfog.R
+import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.TrackPoint
 import com.matt.unfog.data.Trip
 import com.matt.unfog.geo.Geo
 import com.matt.unfog.photos.PhotoImporter
+import com.matt.unfog.homeSpot
 import com.matt.unfog.repository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +63,8 @@ class TrackingService : Service() {
         private const val MAX_ACCURACY_M = 40f
         /** Fixes closer than this to the previous point are dropped. */
         private const val MIN_STEP_M = 12.0
+        /** How far past the home radius counts as having left, so GPS jitter at the edge doesn't. */
+        private const val HOME_MARGIN_M = 150.0
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -70,6 +74,8 @@ class TrackingService : Service() {
     private var distance = 0.0
     private var photoJob: Job? = null
     private var stopping = false
+    /** Set once the trip has gone clearly outside the home spot, so it can end on return. */
+    private var leftHome = false
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -114,6 +120,8 @@ class TrackingService : Service() {
             val pts = repo.points(active.id)
             last = pts.lastOrNull()
             distance = Geo.pathLength(pts)
+            leftHome = homeSpot.spot.value?.let { home -> pts.any { outsideHome(home, it) } } ?: false
+            HomeFence.cancelLeftHome(this@TrackingService)
             updateNotification()
             requestUpdates()
             photoJob = launch {
@@ -156,9 +164,21 @@ class TrackingService : Service() {
         repository.addPoint(p)
         repository.updateDistance(t.id, distance)
         updateNotification()
+        checkHome(p)
     }
 
-    private fun stopTrip() {
+    private fun outsideHome(home: HomeSpot, p: TrackPoint) =
+        Geo.distance(home.lat, home.lng, p.lat, p.lng) > home.radiusM + HOME_MARGIN_M
+
+    /** Ends the trip when you come back inside the home spot after having left it. */
+    private fun checkHome(p: TrackPoint) {
+        val home = homeSpot.spot.value ?: return
+        if (outsideHome(home, p)) leftHome = true
+        if (!home.autoStop || !leftHome || stopping) return
+        if (Geo.distance(home.lat, home.lng, p.lat, p.lng) <= home.radiusM) stopTrip(arrivedHome = true)
+    }
+
+    private fun stopTrip(arrivedHome: Boolean = false) {
         if (stopping) return
         stopping = true
         fused.removeLocationUpdates(callback)
@@ -174,6 +194,7 @@ class TrackingService : Service() {
                 repo.finishTrip(t.id, end, Geo.pathLength(raw))
                 autoName(t, raw)?.let { repo.renameTrip(t.id, it) }
                 runCatching { PhotoImporter.import(this@TrackingService, repo.trip(t.id)!!) }
+                if (arrivedHome) HomeFence.notifyBackHome(this@TrackingService, repo.trip(t.id)?.name ?: t.name)
             }
             trip = null
             TravelMode.setRunning(false)
