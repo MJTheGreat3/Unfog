@@ -119,18 +119,30 @@ object Geo {
         return out
     }
 
-    /** Point on the track nearest in time to [timeMs], or null if the gap is over [maxGapMs]. */
-    fun positionAt(points: List<TrackPoint>, timeMs: Long, maxGapMs: Long = 30 * 60_000L): TrackPoint? {
+    /**
+     * Where the track says you were at [timeMs], interpolated between the fixes on either side.
+     * Returns null when the track can't vouch for that moment: outside the trip, or inside a
+     * long gap where you moved (a long gap where you stayed put is fine, since the fixes on
+     * either side agree).
+     */
+    fun positionAt(points: List<TrackPoint>, timeMs: Long): Pair<Double, Double>? {
         if (points.isEmpty()) return null
-        var lo = 0
-        var hi = points.lastIndex
-        while (lo < hi) {
-            val mid = (lo + hi) / 2
-            if (points[mid].timeMs < timeMs) lo = mid + 1 else hi = mid
+        var hi = 0
+        while (hi < points.size && points[hi].timeMs < timeMs) hi++
+        val before = points.getOrNull(hi - 1)
+        val after = points.getOrNull(hi)
+        val edgeSlackMs = 5 * 60_000L
+        return when {
+            before == null -> after!!.takeIf { it.timeMs - timeMs <= edgeSlackMs }?.let { it.lat to it.lng }
+            after == null -> before.takeIf { timeMs - it.timeMs <= edgeSlackMs }?.let { it.lat to it.lng }
+            else -> {
+                val gap = after.timeMs - before.timeMs
+                val stayed = distance(before, after) < 150
+                if (gap > 10 * 60_000L && !stayed) return null
+                val f = if (gap == 0L) 0.0 else (timeMs - before.timeMs).toDouble() / gap
+                (before.lat + (after.lat - before.lat) * f) to (before.lng + (after.lng - before.lng) * f)
+            }
         }
-        val best = listOfNotNull(points.getOrNull(lo - 1), points.getOrNull(lo))
-            .minBy { abs(it.timeMs - timeMs) }
-        return best.takeIf { abs(it.timeMs - timeMs) <= maxGapMs }
     }
 
     fun bounds(points: List<Pair<Double, Double>>): DoubleArray? {

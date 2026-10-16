@@ -155,25 +155,39 @@ class TripRepository(context: Context) {
 
     // ---- photos ----
 
-    /** Inserts photos not already attached to the trip. Returns how many were new. */
+    /**
+     * Inserts photos not already attached to the trip and refreshes the position of those that
+     * are, keeping their hidden flag. Returns how many were new.
+     */
     fun addPhotos(photos: List<TripPhoto>): Int {
         var added = 0
+        var moved = 0
         db.writableDatabase.transaction {
             for (p in photos) {
-                val id = insertWithOnConflict("photos", null, ContentValues().apply {
-                    put("trip_id", p.tripId)
-                    put("uri", p.uri)
-                    put("taken_ms", p.takenMs)
+                val position = ContentValues().apply {
                     if (p.lat != null && p.lng != null) {
                         put("lat", p.lat)
                         put("lng", p.lng)
+                    } else {
+                        putNull("lat")
+                        putNull("lng")
                     }
                     put("from_exif", if (p.fromExif) 1 else 0)
+                }
+                val id = insertWithOnConflict("photos", null, ContentValues(position).apply {
+                    put("trip_id", p.tripId)
+                    put("uri", p.uri)
+                    put("taken_ms", p.takenMs)
                 }, SQLiteDatabase.CONFLICT_IGNORE)
-                if (id != -1L) added++
+                if (id != -1L) {
+                    added++
+                } else {
+                    moved += update("photos", position, "trip_id = ? AND uri = ?",
+                        arrayOf(p.tripId.toString(), p.uri))
+                }
             }
         }
-        if (added > 0) changed()
+        if (added > 0 || moved > 0) changed()
         return added
     }
 

@@ -19,6 +19,8 @@ import com.matt.unfog.repository
  */
 object PhotoImporter {
 
+    private const val STALE_EXIF_M = 300.0
+
     fun mediaPermissions(): Array<String> = when {
         Build.VERSION.SDK_INT >= 34 -> arrayOf(
             Manifest.permission.READ_MEDIA_IMAGES,
@@ -50,7 +52,10 @@ object PhotoImporter {
     private fun granted(context: Context, permission: String) =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
-    /** Returns the number of newly attached photos. Must run off the main thread. */
+    /**
+     * Attaches photos taken during [trip] and re-places ones already attached. Returns the number
+     * of newly attached photos. Must run off the main thread.
+     */
     fun import(context: Context, trip: Trip): Int {
         if (!canRead(context)) return 0
         val repo = context.repository
@@ -78,7 +83,12 @@ object PhotoImporter {
                 val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                 val exif = if (canReadGps) readExifLatLng(context, uri) else null
-                val pos = exif ?: Geo.positionAt(track, taken)?.let { it.lat to it.lng }
+                val onTrack = Geo.positionAt(track, taken)
+                // Camera apps often stamp a stale cached fix on photos taken indoors or in quick
+                // succession. When the track disagrees by more than a short walk, trust the track.
+                val exifOk = exif != null && (onTrack == null ||
+                    Geo.distance(exif.first, exif.second, onTrack.first, onTrack.second) < STALE_EXIF_M)
+                val pos = if (exifOk) exif else onTrack ?: exif
                 found += TripPhoto(
                     id = 0,
                     tripId = trip.id,
@@ -86,7 +96,7 @@ object PhotoImporter {
                     takenMs = taken,
                     lat = pos?.first,
                     lng = pos?.second,
-                    fromExif = exif != null,
+                    fromExif = exifOk,
                     hidden = false,
                 )
             }
