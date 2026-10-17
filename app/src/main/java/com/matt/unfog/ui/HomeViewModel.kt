@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.geojson.FeatureCollection
 
@@ -27,6 +28,10 @@ enum class MapMode(val label: String) {
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = app.repository
+
+    fun renameTrip(id: Long, name: String) {
+        viewModelScope.launch(Dispatchers.IO) { repo.renameTrip(id, name) }
+    }
 
     class MapState(
         val fog: List<MapData.FogPath>,
@@ -47,15 +52,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     val map: StateFlow<MapState?> = combine(
-        repo.observeAllPoints(), repo.observeAllPhotos(),
-    ) { points, photos ->
+        repo.observeAllPoints(), repo.observeAllPhotos(), repo.observeTrips(),
+    ) { points, photos, trips ->
         MapState(
             fog = MapData.fogPaths(points),
             frequency = MapData.frequency(points),
             routes = MapData.routes(points),
             photos = MapData.photos(photos),
             photoHeat = MapData.photoHeat(photos),
-            days = MapData.days(points),
+            days = MapData.days(points, trips, photos),
             explored = MapData.explored(points),
             bounds = com.matt.unfog.geo.Geo.bounds(points.map { it.lat to it.lng }),
         )

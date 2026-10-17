@@ -2,6 +2,7 @@ package com.matt.unfog.ui
 
 import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.TrackPoint
+import com.matt.unfog.data.Trip
 import com.matt.unfog.data.TripPhoto
 import com.matt.unfog.geo.Geo
 import com.matt.unfog.geo.HexGrid
@@ -66,36 +67,57 @@ object MapData {
         return out
     }
 
+    /** A trip as it appears on one day: its colour that day and its display name. */
+    class DayTrip(val id: Long, val name: String, val color: String)
+
     /** One day with travel in it, for the Days view. */
     class Day(
         val epochDay: Long,
-        val trips: Int,
+        val trips: List<DayTrip>,
         val distanceM: Double,
         val routes: FeatureCollection,
         val bounds: DoubleArray,
-    )
+        /** The day's track, in time order across trips, for replay. */
+        val points: List<TrackPoint>,
+        val photos: List<TripPhoto>,
+    ) {
+        fun colorOf(tripId: Long) = trips.firstOrNull { it.id == tripId }?.color ?: dayColors.first()
+    }
 
     /** Colours that tell a day's trips apart. */
     val dayColors = listOf("#FF8A3D", "#3F7FE8", "#2EAA6E", "#E0218A", "#8A5CF6", "#E8B321")
 
-    /** Travel grouped by local calendar day, newest first. Each trip on a day gets its own colour. */
-    fun days(points: List<TrackPoint>): List<Day> {
+    /**
+     * Travel grouped by local calendar day, newest first. Each trip on a day gets its own colour,
+     * in the order the trips started.
+     */
+    fun days(points: List<TrackPoint>, trips: List<Trip>, photos: List<TripPhoto>): List<Day> {
         val zone = ZoneId.systemDefault()
+        fun dayOf(ms: Long) = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate().toEpochDay()
+        val names = trips.associate { it.id to it.name }
+        val photosByDay = photos.groupBy { dayOf(it.takenMs) }
         return points
-            .groupBy { Instant.ofEpochMilli(it.timeMs).atZone(zone).toLocalDate().toEpochDay() }
-            .map { (day, pts) ->
-                val tripIds = pts.map { it.tripId }.distinct()
-                val features = runs(pts).map { run ->
+            .groupBy { dayOf(it.timeMs) }
+            .map { (day, raw) ->
+                val pts = raw.sortedBy { it.timeMs }
+                val dayTrips = pts.map { it.tripId }.distinct().mapIndexed { i, id ->
+                    DayTrip(id, names[id] ?: "Trip", dayColors[i % dayColors.size])
+                }
+                val colors = dayTrips.associate { it.id to it.color }
+                val features = runs(raw).map { run ->
                     Feature.fromGeometry(LineString.fromLngLats(run.map { Point.fromLngLat(it.lng, it.lat) })).apply {
-                        addStringProperty("color", dayColors[tripIds.indexOf(run.first().tripId) % dayColors.size])
+                        addStringProperty("color", colors.getValue(run.first().tripId))
                     }
                 }
+                val ids = colors.keys
                 Day(
                     epochDay = day,
-                    trips = tripIds.size,
-                    distanceM = Geo.pathLength(pts),
+                    trips = dayTrips,
+                    distanceM = Geo.pathLength(raw),
                     routes = FeatureCollection.fromFeatures(features),
                     bounds = Geo.bounds(pts.map { it.lat to it.lng })!!,
+                    points = pts,
+                    photos = photosByDay[day].orEmpty().filter { it.tripId in ids }.sortedBy { it.takenMs },
                 )
             }
             .sortedByDescending { it.epochDay }

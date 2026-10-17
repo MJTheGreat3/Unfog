@@ -5,7 +5,10 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +31,9 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MyLocation
@@ -41,6 +46,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.ImeAction
@@ -69,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.matt.unfog.data.Trip
+import com.matt.unfog.data.TripPhoto
 import com.matt.unfog.data.MapTheme
 import com.matt.unfog.homeSpot
 import com.matt.unfog.mapTheme
@@ -95,6 +102,9 @@ fun HomeScreen(
     var mode by rememberSaveable { mutableStateOf(MapMode.Explored) }
     // Index into the newest-first day list shown in Days mode.
     var dayIndex by rememberSaveable { mutableStateOf(0) }
+    var dayReplaying by remember { mutableStateOf(false) }
+    var replayPhoto by remember { mutableStateOf<TripPhoto?>(null) }
+    var renamingTrip by remember { mutableStateOf<MapData.DayTrip?>(null) }
     var fitted by remember { mutableStateOf(false) }
     val homes by context.homeSpot.spots.collectAsStateWithLifecycle()
     var homeDialog by remember { mutableStateOf(false) }
@@ -215,7 +225,7 @@ fun HomeScreen(
                 MapLayers.show(handle.style, MapLayers.HEX_COARSE, mode == MapMode.Frequency)
                 MapLayers.show(handle.style, MapLayers.ROUTES, mode == MapMode.Routes)
                 MapLayers.show(handle.style, MapLayers.PHOTOS, mode == MapMode.Photos)
-                MapLayers.show(handle.style, MapLayers.DAY_ROUTES, mode == MapMode.Days)
+                MapLayers.show(handle.style, MapLayers.DAY_ROUTES, mode == MapMode.Days && !dayReplaying)
             }
             val days = state?.days.orEmpty()
             val day = days.getOrNull(dayIndex.coerceAtMost(days.lastIndex).coerceAtLeast(0))
@@ -223,14 +233,33 @@ fun HomeScreen(
                 if (mode != MapMode.Days || day == null) return@LaunchedEffect
                 MapLayers.set(handle.style, MapLayers.DAY_ROUTES, day.routes)
             }
-            LaunchedEffect(handle, mode, day?.epochDay) {
-                if (mode != MapMode.Days || day == null) return@LaunchedEffect
-                val b = day.bounds
+            fun fitDay(d: MapData.Day) {
+                val b = d.bounds
                 runCatching {
                     handle.map.animateCamera(CameraUpdateFactory.newLatLngBounds(
-                        LatLngBounds.from(b[2], b[3], b[0], b[1]), 140, 420, 140, 360,
+                        LatLngBounds.from(b[2], b[3], b[0], b[1]), 140, 640, 140, 360,
                     ), 600)
                 }
+            }
+            LaunchedEffect(handle, mode, day?.epochDay) {
+                dayReplaying = false
+                if (mode != MapMode.Days || day == null) return@LaunchedEffect
+                fitDay(day)
+            }
+            LaunchedEffect(handle, dayReplaying) {
+                MapLayers.show(handle.style, MapLayers.DAY_ROUTES, mode == MapMode.Days && !dayReplaying)
+                if (!dayReplaying) {
+                    clearReplay(handle)
+                    replayPhoto = null
+                    return@LaunchedEffect
+                }
+                val d = day ?: return@LaunchedEffect
+                // Squeeze out time spent between trips or standing still.
+                replay(handle, d.points, d.photos, onPhoto = { replayPhoto = it },
+                    colorOf = d::colorOf, maxGapMs = 60_000)
+                delay(1_200)
+                dayReplaying = false
+                fitDay(d)
             }
             if (mode == MapMode.Explored) {
                 FogOverlay(
@@ -316,7 +345,15 @@ fun HomeScreen(
                     }
                 }
             } else {
-                ModeInfo(mode, state, tripCount, dayIndex) { dayIndex = it }
+                ModeInfo(
+                    mode, state, tripCount, dayIndex, { dayIndex = it },
+                    dayActions = DayActions(
+                        replaying = dayReplaying,
+                        onReplay = { dayReplaying = true },
+                        onRename = { renamingTrip = it },
+                        onOpenTrip = onOpenTrip,
+                    ),
+                )
             }
         }
 
@@ -326,9 +363,28 @@ fun HomeScreen(
                 .navigationBarsPadding()
                 .padding(16.dp)
         ) {
-            TravelCard(active, running, onStart = { namingTrip = true }, onStop = { TravelMode.stop(context) },
-                onOpen = { active?.let { onOpenTrip(it.id) } })
+            if (dayReplaying) {
+                FilledTonalButton(onClick = { dayReplaying = false }) {
+                    Icon(Icons.Rounded.Stop, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Stop replay")
+                }
+            } else {
+                TravelCard(active, running, onStart = { namingTrip = true }, onStop = { TravelMode.stop(context) },
+                    onOpen = { active?.let { onOpenTrip(it.id) } })
+            }
         }
+        ReplayPhotoPopup(replayPhoto, Modifier.align(Alignment.Center))
+    }
+
+    BackHandler(dayReplaying) { dayReplaying = false }
+
+    renamingTrip?.let { t ->
+        RenameTripDialog(
+            current = t.name,
+            onDismiss = { renamingTrip = null },
+            onRename = { vm.renameTrip(t.id, it); renamingTrip = null },
+        )
     }
 
     if (namingTrip) {
@@ -354,6 +410,7 @@ private fun ModeInfo(
     tripCount: Int,
     dayIndex: Int,
     onDayIndex: (Int) -> Unit,
+    dayActions: DayActions,
 ) {
     val explored = state?.explored
     Surface(
@@ -394,14 +451,14 @@ private fun ModeInfo(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                MapMode.Days -> DayPicker(state?.days.orEmpty(), dayIndex, onDayIndex)
+                MapMode.Days -> DayPicker(state?.days.orEmpty(), dayIndex, onDayIndex, dayActions)
             }
         }
     }
 }
 
 @Composable
-private fun DayPicker(days: List<MapData.Day>, index: Int, onIndex: (Int) -> Unit) {
+private fun DayPicker(days: List<MapData.Day>, index: Int, onIndex: (Int) -> Unit, actions: DayActions) {
     if (days.isEmpty()) {
         Text("No travel days yet", style = MaterialTheme.typography.titleSmall)
         return
@@ -416,7 +473,7 @@ private fun DayPicker(days: List<MapData.Day>, index: Int, onIndex: (Int) -> Uni
         Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(formatDate(LocalDate.ofEpochDay(day.epochDay)), style = MaterialTheme.typography.titleSmall)
             Text(
-                "${plural(day.trips, "trip")} · ${formatKm(day.distanceM)} · ${i + 1} of ${days.size}",
+                "${plural(day.trips.size, "trip")} · ${formatKm(day.distanceM)} · ${i + 1} of ${days.size}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -425,7 +482,44 @@ private fun DayPicker(days: List<MapData.Day>, index: Int, onIndex: (Int) -> Uni
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Later day")
         }
     }
+    // Key: which colour is which trip. Tap to open, pencil to rename.
+    day.trips.forEach { trip ->
+        Row(
+            Modifier.clickable { actions.onOpenTrip(trip.id) }.padding(start = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(10.dp).background(Color(android.graphics.Color.parseColor(trip.color)), CircleShape))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                trip.name, style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            IconButton(onClick = { actions.onRename(trip) }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.Edit, "Rename ${trip.name}", Modifier.size(18.dp))
+            }
+        }
+    }
+    if (!actions.replaying) {
+        FilledTonalButton(
+            onClick = actions.onReplay,
+            enabled = day.points.size >= 2,
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            Icon(Icons.Rounded.PlayArrow, null)
+            Spacer(Modifier.width(6.dp))
+            Text("Replay day")
+        }
+    }
 }
+
+/** What the Days card can ask the screen to do. */
+private class DayActions(
+    val replaying: Boolean,
+    val onReplay: () -> Unit,
+    val onRename: (MapData.DayTrip) -> Unit,
+    val onOpenTrip: (Long) -> Unit,
+)
 
 @Composable
 private fun Legend(title: String, items: List<Pair<String, Color>>) {
