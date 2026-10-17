@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class MapTheme(val styleUrl: String) {
     Light("https://tiles.openfreemap.org/styles/liberty"),
-    Dark("https://tiles.openfreemap.org/styles/dark"),
+    // Liberty recoloured by tools/make_dark_style.py; OpenFreeMap's own dark style drops most detail.
+    Dark("asset://liberty-dark.json"),
 }
 
 /** The chosen base map. Until you pick one, it follows the system dark mode setting. */
