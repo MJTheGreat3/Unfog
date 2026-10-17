@@ -361,7 +361,7 @@ fun MapHandle.fit(points: List<TrackPoint>, bottomPadding: Int = 120) {
 }
 
 /**
- * Animated playback: the route draws itself over ~15 seconds while the camera follows, and
+ * Animated playback: the route draws itself over ~25 seconds while the camera follows, and
  * each photo pops up as the playhead passes the moment it was taken.
  */
 private suspend fun replay(
@@ -377,7 +377,7 @@ private suspend fun replay(
     val start = points.first().timeMs
     val end = points.last().timeMs
     val frames = 300
-    val frameMs = 50L
+    val frameMs = 85L
     handle.map.animateCamera(
         CameraUpdateFactory.newLatLngZoom(LatLng(points[0].lat, points[0].lng), 15.0), 800,
     )
