@@ -27,7 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Stop
@@ -36,7 +38,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.TextButton
@@ -61,7 +69,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.matt.unfog.data.Trip
+import com.matt.unfog.data.MapTheme
 import com.matt.unfog.homeSpot
+import com.matt.unfog.mapTheme
 import java.time.LocalDate
 import com.matt.unfog.photos.PhotoImporter
 import com.matt.unfog.tracking.TravelMode
@@ -98,6 +108,10 @@ fun HomeScreen(
     val currentMode by rememberUpdatedState(mode)
     val openTrip by rememberUpdatedState(onOpenTrip)
     var locationGranted by remember { mutableStateOf(TravelMode.hasLocationPermission(context)) }
+    val theme by context.mapTheme.theme.collectAsStateWithLifecycle()
+    var namingTrip by remember { mutableStateOf(false) }
+    // Name typed in the start dialog, held across the permission prompt.
+    var pendingName by rememberSaveable { mutableStateOf<String?>(null) }
 
     val mediaLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -107,11 +121,13 @@ fun HomeScreen(
     ) { result ->
         if (result[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             locationGranted = true
-            TravelMode.start(context)
+            TravelMode.start(context, pendingName)
+            pendingName = null
             if (!PhotoImporter.canRead(context)) mediaLauncher.launch(PhotoImporter.mediaPermissions())
         }
     }
-    fun startTravel() {
+    fun startTravel(name: String? = null) {
+        pendingName = name
         val perms = buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -170,7 +186,6 @@ fun HomeScreen(
                 MapLayers.set(handle.style, MapLayers.HEX_COARSE, s.frequency.coarse)
                 MapLayers.set(handle.style, MapLayers.ROUTES, s.routes)
                 MapLayers.set(handle.style, MapLayers.PHOTOS, s.photos)
-                MapLayers.set(handle.style, MapLayers.PHOTO_HEAT, s.photoHeat)
                 if (!fitted) {
                     val b = s.bounds
                     if (b != null) {
@@ -200,7 +215,6 @@ fun HomeScreen(
                 MapLayers.show(handle.style, MapLayers.HEX_COARSE, mode == MapMode.Frequency)
                 MapLayers.show(handle.style, MapLayers.ROUTES, mode == MapMode.Routes)
                 MapLayers.show(handle.style, MapLayers.PHOTOS, mode == MapMode.Photos)
-                MapLayers.show(handle.style, MapLayers.PHOTO_HEAT, mode == MapMode.Photos)
                 MapLayers.show(handle.style, MapLayers.DAY_ROUTES, mode == MapMode.Days)
             }
             val days = state?.days.orEmpty()
@@ -219,7 +233,14 @@ fun HomeScreen(
                 }
             }
             if (mode == MapMode.Explored) {
-                FogOverlay(handle.map, state?.fog.orEmpty(), Modifier.fillMaxSize())
+                FogOverlay(
+                    handle.map, state?.fog.orEmpty(), Modifier.fillMaxSize(),
+                    // On the dark map, light mist makes the cleared (dark) ground stand out.
+                    fog = if (handle.theme == MapTheme.Dark) Color(0xD9C9D1E0) else Color(0xE6161A23),
+                )
+            }
+            if (mode == MapMode.Photos) {
+                HeatOverlay(handle.map, state?.photoHeat.orEmpty(), Modifier.fillMaxSize())
             }
         }
 
@@ -247,6 +268,14 @@ fun HomeScreen(
                         handle.map.animateCamera(CameraUpdateFactory.newLatLngZoom(it, 14.0))
                     }
                 }) { Icon(Icons.Rounded.MyLocation, "My location") }
+                FilledTonalIconButton(onClick = {
+                    context.mapTheme.set(if (theme == MapTheme.Dark) MapTheme.Light else MapTheme.Dark)
+                }) {
+                    Icon(
+                        if (theme == MapTheme.Dark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                        if (theme == MapTheme.Dark) "Light map" else "Dark map",
+                    )
+                }
                 FilledTonalIconButton(onClick = { editHomeId = null; homeDialog = true }) {
                     Icon(Icons.Rounded.Home, "Places",
                         tint = if (homes.isNotEmpty()) Color(0xFF2EAA6E) else LocalContentColor.current)
@@ -297,9 +326,16 @@ fun HomeScreen(
                 .navigationBarsPadding()
                 .padding(16.dp)
         ) {
-            TravelCard(active, running, onStart = ::startTravel, onStop = { TravelMode.stop(context) },
+            TravelCard(active, running, onStart = { namingTrip = true }, onStop = { TravelMode.stop(context) },
                 onOpen = { active?.let { onOpenTrip(it.id) } })
         }
+    }
+
+    if (namingTrip) {
+        StartTripDialog(
+            onDismiss = { namingTrip = false },
+            onStart = { name -> namingTrip = false; startTravel(name) },
+        )
     }
 
     if (homeDialog) {
@@ -473,3 +509,27 @@ private fun TravelCard(
     }
 }
 
+
+@Composable
+private fun StartTripDialog(onDismiss: () -> Unit, onStart: (String?) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Start a trip") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Trip name (optional)") },
+                placeholder = { Text("Named from where you go if left empty") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Go,
+                ),
+                keyboardActions = KeyboardActions(onGo = { onStart(name.ifBlank { null }) }),
+            )
+        },
+        confirmButton = { TextButton(onClick = { onStart(name.ifBlank { null }) }) { Text("Start") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +16,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.matt.unfog.data.MapTheme
+import com.matt.unfog.mapTheme
 import com.matt.unfog.tracking.TravelMode
 import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.location.modes.CameraMode
@@ -23,10 +27,12 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 
-const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 
-/** A loaded map and its style. Both are only valid while the composable is on screen. */
-class MapHandle(val map: MapLibreMap, val style: Style) {
+/**
+ * A loaded map and its style. Both are only valid while the composable is on screen; switching
+ * the map theme loads a new style and produces a new handle.
+ */
+class MapHandle(val map: MapLibreMap, val style: Style, val theme: MapTheme) {
     fun enableLocation(context: Context) = enableLocation(context, map, style)
 
     fun lastKnown(): org.maplibre.android.geometry.LatLng? = runCatching {
@@ -36,29 +42,36 @@ class MapHandle(val map: MapLibreMap, val style: Style) {
 }
 
 /**
- * MapLibre MapView hosted in Compose. [onReady] runs once the style has loaded; the returned
- * handle is null until then.
+ * MapLibre MapView hosted in Compose, styled by the chosen map theme. [onReady] runs once,
+ * when the first style has loaded; the returned handle is null until then.
  */
 @Composable
 fun rememberMap(modifier: Modifier = Modifier, onReady: (MapHandle) -> Unit = {}): MapHandle? {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val theme by context.mapTheme.theme.collectAsStateWithLifecycle()
     var handle by remember { mutableStateOf<MapHandle?>(null) }
+    var map by remember { mutableStateOf<MapLibreMap?>(null) }
     val mapView = remember {
         MapView(context).apply {
             onCreate(Bundle())
-            getMapAsync { map ->
-                map.uiSettings.isRotateGesturesEnabled = false
-                map.uiSettings.isTiltGesturesEnabled = false
-                map.uiSettings.isAttributionEnabled = true
-                map.uiSettings.isLogoEnabled = false
-                map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                    MapLayers.install(style)
-                    val h = MapHandle(map, style)
-                    handle = h
-                    onReady(h)
-                }
+            getMapAsync { m ->
+                m.uiSettings.isRotateGesturesEnabled = false
+                m.uiSettings.isTiltGesturesEnabled = false
+                m.uiSettings.isAttributionEnabled = true
+                m.uiSettings.isLogoEnabled = false
+                map = m
             }
+        }
+    }
+    LaunchedEffect(map, theme) {
+        val m = map ?: return@LaunchedEffect
+        val first = handle == null
+        m.setStyle(Style.Builder().fromUri(theme.styleUrl)) { style ->
+            MapLayers.install(style)
+            val h = MapHandle(m, style, theme)
+            handle = h
+            if (first) onReady(h)
         }
     }
 
