@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -67,11 +68,18 @@ fun rememberMap(modifier: Modifier = Modifier, onReady: (MapHandle) -> Unit = {}
     LaunchedEffect(map, theme) {
         val m = map ?: return@LaunchedEffect
         val first = handle == null
+        // A style can carry its own default camera; keep the user's view when switching.
+        val camera = m.cameraPosition
         m.setStyle(Style.Builder().fromUri(theme.styleUrl)) { style ->
+            if (!first) m.cameraPosition = camera
             MapLayers.install(style)
             val h = MapHandle(m, style, theme)
-            handle = h
-            if (first) onReady(h)
+            // A bundled style can load before the view is measured, and bounds-based camera
+            // moves fail on a zero-size map. Hand the map out only once it has a size.
+            mapView.doOnLayout {
+                handle = h
+                if (first) onReady(h)
+            }
         }
     }
 
