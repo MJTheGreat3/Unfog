@@ -13,14 +13,15 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.geojson.FeatureCollection
 
 enum class MapMode(val label: String) {
     Explored("Explored"),
+    Days("Days"),
+    Photos("Photos"),
     Frequency("Frequency"),
     Routes("Routes"),
-    Photos("Photos"),
-    Days("Days"),
 }
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -32,7 +33,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val frequency: MapData.Frequency,
         val routes: FeatureCollection,
         val photos: FeatureCollection,
-        val photoHeat: FeatureCollection,
+        val photoHeat: List<LatLng>,
         val days: List<MapData.Day>,
         val explored: MapData.Explored,
         val bounds: DoubleArray?,
