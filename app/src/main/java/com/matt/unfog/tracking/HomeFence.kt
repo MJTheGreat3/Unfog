@@ -98,19 +98,30 @@ object HomeFence {
         notify(context, NOTIFY_LEFT, n)
     }
 
+    /** Asks whether to end the running trip now that you've reached a saved place. */
     fun notifyArrived(context: Context, placeName: String, tripName: String) {
         channel(context)
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFY_LEFT)
+        val end = PendingIntent.getService(
+            context, 13,
+            Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fog)
             .setContentTitle(if (placeName == "Home") "Welcome home" else "You're at $placeName")
-            .setContentText("Trip ended and saved: $tripName")
+            .setContentText("End \u201c$tripName\u201d?")
             .setContentIntent(PendingIntent.getActivity(
                 context, 12, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
             ))
             .setAutoCancel(true)
+            .addAction(0, "End trip", end)
             .build()
         notify(context, NOTIFY_BACK, n)
+    }
+
+    fun cancelArrived(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(NOTIFY_BACK)
     }
 
     fun cancelLeftHome(context: Context) {

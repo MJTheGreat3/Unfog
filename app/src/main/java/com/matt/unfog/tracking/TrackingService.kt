@@ -25,7 +25,6 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.matt.unfog.MainActivity
 import com.matt.unfog.R
-import com.matt.unfog.data.HomeSpot
 import com.matt.unfog.data.TrackPoint
 import com.matt.unfog.data.Trip
 import com.matt.unfog.geo.Geo
@@ -74,7 +73,7 @@ class TrackingService : Service() {
     private var distance = 0.0
     private var photoJob: Job? = null
     private var stopping = false
-    /** Set once the trip has gone clearly outside the home spot, so it can end on return. */
+    /** Set once the trip is clearly away from every saved place; cleared after asking on arrival. */
     private var leftHome = false
 
     private val callback = object : LocationCallback() {
@@ -174,21 +173,24 @@ class TrackingService : Service() {
     }
 
     /**
-     * Ends the trip on arriving at any home spot, once the trip has been away from all of
-     * them. So a trip from home to work ends at work, but one started at home doesn't end there.
+     * Asks whether to end the trip on arriving at a saved place, once the trip has been away
+     * from all of them. Asks once per arrival: you have to leave again before it asks again.
      */
     private fun checkHome(p: TrackPoint) {
         if (awayFromHomes(p)) leftHome = true
         if (!leftHome || stopping) return
         val arrived = homeSpot.spots.value.firstOrNull { it.autoStop && it.distanceTo(p.lat, p.lng) <= it.radiusM }
-        if (arrived != null) stopTrip(arrivedAt = arrived)
+            ?: return
+        leftHome = false
+        HomeFence.notifyArrived(this, arrived.name, trip?.name ?: "this trip")
     }
 
-    private fun stopTrip(arrivedAt: HomeSpot? = null) {
+    private fun stopTrip() {
         if (stopping) return
         stopping = true
         fused.removeLocationUpdates(callback)
         photoJob?.cancel()
+        HomeFence.cancelArrived(this)
         scope.launch {
             val repo = repository
             val t = trip ?: repo.activeTrip()
@@ -200,9 +202,6 @@ class TrackingService : Service() {
                 repo.finishTrip(t.id, end, Geo.pathLength(raw))
                 autoName(t, raw)?.let { repo.renameTrip(t.id, it) }
                 runCatching { PhotoImporter.import(this@TrackingService, repo.trip(t.id)!!) }
-                if (arrivedAt != null) {
-                    HomeFence.notifyArrived(this@TrackingService, arrivedAt.name, repo.trip(t.id)?.name ?: t.name)
-                }
             }
             trip = null
             TravelMode.setRunning(false)

@@ -17,7 +17,7 @@ data class HomeSpot(
     val radiusM: Float = 200f,
     /** Notify and offer to start a trip when you leave. Needs background location. */
     val askOnLeave: Boolean = true,
-    /** End the running trip when you arrive. */
+    /** Offer to end the running trip when you arrive. */
     val autoStop: Boolean = true,
 ) {
     fun distanceTo(lat: Double, lng: Double) = Geo.distance(this.lat, this.lng, lat, lng)

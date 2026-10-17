@@ -149,7 +149,7 @@ fun HomeSpotDialog(
                     if (spots.isEmpty()) {
                         Text(
                             "Save home, work or anywhere you return to. Unfog can offer to start " +
-                                "a trip when you leave one, and end it when you arrive at one.",
+                                "a trip when you leave one, and to end it when you arrive at one.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -167,7 +167,7 @@ fun HomeSpotDialog(
                                         listOfNotNull(
                                             "${spot.radiusM.toInt()} m",
                                             "asks when leaving".takeIf { spot.askOnLeave },
-                                            "ends trips".takeIf { spot.autoStop },
+                                            "asks when arriving".takeIf { spot.autoStop },
                                         ).joinToString(" · "),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -219,7 +219,7 @@ fun HomeSpotDialog(
                     if (editing.askOnLeave && !background) {
                         BackgroundNotice { backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
                     }
-                    ToggleRow("End the trip when I arrive", editing.autoStop) {
+                    ToggleRow("Ask to end the trip when I arrive", editing.autoStop) {
                         saveHomeSpot(context, editing.copy(autoStop = it))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
