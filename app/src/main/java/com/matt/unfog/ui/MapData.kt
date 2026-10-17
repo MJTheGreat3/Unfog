@@ -5,7 +5,6 @@ import com.matt.unfog.data.TrackPoint
 import com.matt.unfog.data.TripPhoto
 import com.matt.unfog.geo.Geo
 import com.matt.unfog.geo.HexGrid
-import com.matt.unfog.geo.TransportMode
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -44,46 +43,69 @@ object MapData {
         return Frequency(build(fineGrid), build(coarseGrid))
     }
 
-    /** Route lines split wherever the inferred transport mode changes. */
-    fun routes(points: List<TrackPoint>): FeatureCollection {
-        val features = mutableListOf<Feature>()
-        var run = mutableListOf<Point>()
-        var runMode: TransportMode? = null
-
-        fun flush() {
-            if (run.size >= 2 && runMode != null) {
-                features += Feature.fromGeometry(LineString.fromLngLats(run)).apply {
-                    addStringProperty("color", runMode!!.color)
-                    addStringProperty("mode", runMode!!.name)
-                }
+    /** Route lines, split wherever the trip changes or the signal jumps. */
+    fun routes(points: List<TrackPoint>): FeatureCollection =
+        FeatureCollection.fromFeatures(runs(points).map { run ->
+            Feature.fromGeometry(LineString.fromLngLats(run.map { Point.fromLngLat(it.lng, it.lat) })).apply {
+                addNumberProperty("trip", run.first().tripId)
             }
-        }
+        })
 
-        for ((a, b) in points.zipWithNext()) {
-            if (a.tripId != b.tripId || Geo.isJump(a, b)) {
-                flush()
+    private fun runs(points: List<TrackPoint>): List<List<TrackPoint>> {
+        val out = mutableListOf<List<TrackPoint>>()
+        var run = mutableListOf<TrackPoint>()
+        for (p in points) {
+            val prev = run.lastOrNull()
+            if (prev != null && (prev.tripId != p.tripId || Geo.isJump(prev, p))) {
+                if (run.size >= 2) out += run
                 run = mutableListOf()
-                runMode = null
-                continue
             }
-            val mode = segmentMode(a, b)
-            if (mode != runMode) {
-                flush()
-                run = if (runMode == null) mutableListOf() else mutableListOf(run.last())
-                runMode = mode
-            }
-            if (run.isEmpty()) run += Point.fromLngLat(a.lng, a.lat)
-            run += Point.fromLngLat(b.lng, b.lat)
+            run += p
         }
-        flush()
-        return FeatureCollection.fromFeatures(features)
+        if (run.size >= 2) out += run
+        return out
     }
 
-    private fun segmentMode(a: TrackPoint, b: TrackPoint): TransportMode {
-        val dt = (b.timeMs - a.timeMs) / 1000.0
-        val speed = if (dt > 0) Geo.distance(a, b) / dt else b.speedMps.toDouble()
-        return TransportMode.of(speed)
+    /** One day with travel in it, for the Days view. */
+    class Day(
+        val epochDay: Long,
+        val trips: Int,
+        val distanceM: Double,
+        val routes: FeatureCollection,
+        val bounds: DoubleArray,
+    )
+
+    /** Colours that tell a day's trips apart. */
+    val dayColors = listOf("#FF8A3D", "#3F7FE8", "#2EAA6E", "#E0218A", "#8A5CF6", "#E8B321")
+
+    /** Travel grouped by local calendar day, newest first. Each trip on a day gets its own colour. */
+    fun days(points: List<TrackPoint>): List<Day> {
+        val zone = ZoneId.systemDefault()
+        return points
+            .groupBy { Instant.ofEpochMilli(it.timeMs).atZone(zone).toLocalDate().toEpochDay() }
+            .map { (day, pts) ->
+                val tripIds = pts.map { it.tripId }.distinct()
+                val features = runs(pts).map { run ->
+                    Feature.fromGeometry(LineString.fromLngLats(run.map { Point.fromLngLat(it.lng, it.lat) })).apply {
+                        addStringProperty("color", dayColors[tripIds.indexOf(run.first().tripId) % dayColors.size])
+                    }
+                }
+                Day(
+                    epochDay = day,
+                    trips = tripIds.size,
+                    distanceM = Geo.pathLength(pts),
+                    routes = FeatureCollection.fromFeatures(features),
+                    bounds = Geo.bounds(pts.map { it.lat to it.lng })!!,
+                )
+            }
+            .sortedByDescending { it.epochDay }
     }
+
+    /** Unclustered photo points for the heatmap. */
+    fun photoHeat(photos: List<TripPhoto>): FeatureCollection =
+        FeatureCollection.fromFeatures(photos.filter { it.lat != null && it.lng != null }.map {
+            Feature.fromGeometry(Point.fromLngLat(it.lng!!, it.lat!!))
+        })
 
     fun photos(photos: List<TripPhoto>): FeatureCollection =
         FeatureCollection.fromFeatures(photos.filter { it.lat != null && it.lng != null }.map {

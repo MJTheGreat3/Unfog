@@ -16,7 +16,9 @@ import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory.circleBlur
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
@@ -53,6 +55,11 @@ object MapLayers {
     const val REPLAY_HEAD = "replay-head"
     const val TRIP_PHOTOS = "trip-photos"
     const val HOME = "home"
+    const val DAY_ROUTES = "day-routes"
+    const val PHOTO_HEAT = "photo-heat"
+
+    /** Zoom where individual photo pins appear on top of the (dimming) heat glow. */
+    private const val PHOTO_PIN_ZOOM = 15f
 
     /** Zoom level where the frequency map switches from coarse to fine hexes. */
     const val HEX_SWITCH_ZOOM = 11.5f
@@ -70,11 +77,13 @@ object MapLayers {
         REPLAY_HEAD to listOf("replay-head"),
         TRIP_PHOTOS to listOf(LAYER_TRIP_PHOTOS, "trip-photos-label"),
         HOME to listOf("home-fill", "home-outline", "home-centre", "home-label"),
+        DAY_ROUTES to listOf("day-routes-casing", "day-routes-line"),
+        PHOTO_HEAT to listOf("photo-heat"),
     )
 
     fun install(style: Style) {
         val empty = FeatureCollection.fromFeatures(emptyList())
-        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD, TRIP_PHOTOS, HOME).forEach {
+        listOf(HEX_FINE, HEX_COARSE, ROUTES, REPLAY, REPLAY_HEAD, TRIP_PHOTOS, HOME, DAY_ROUTES, PHOTO_HEAT).forEach {
             style.addSource(GeoJsonSource(it, empty))
         }
         style.addSource(
@@ -138,8 +147,34 @@ object MapLayers {
         )
         style.addLayer(
             LineLayer("routes-line", ROUTES).withProperties(
+                lineColor(Color.rgb(255, 138, 61)), lineWidth(width),
+                lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND),
+            )
+        )
+
+        style.addLayer(
+            LineLayer("day-routes-casing", DAY_ROUTES).withProperties(
+                lineColor(Color.argb(140, 0, 0, 0)),
+                lineWidth(interpolate(linear(), zoom(), stop(4, 3f), stop(12, 6f), stop(17, 10f))),
+                lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND),
+            )
+        )
+        style.addLayer(
+            LineLayer("day-routes-line", DAY_ROUTES).withProperties(
                 lineColor(get("color")), lineWidth(width),
                 lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND),
+            )
+        )
+
+        // Where you take photos: large, fully blurred translucent dots. Where photos pile up the
+        // dots overlap and the colour deepens, which reads as a heatmap. (MapLibre's own
+        // HeatmapLayer crashes the renderer on some GPUs.)
+        style.addLayer(
+            CircleLayer("photo-heat", PHOTO_HEAT).withProperties(
+                circleColor(Color.rgb(224, 33, 138)),
+                circleRadius(interpolate(linear(), zoom(), stop(3, 10f), stop(12, 28f), stop(17, 80f))),
+                circleBlur(1f),
+                circleOpacity(interpolate(linear(), zoom(), stop(PHOTO_PIN_ZOOM - 1, 0.45f), stop(PHOTO_PIN_ZOOM + 2, 0.25f))),
             )
         )
 
@@ -161,20 +196,20 @@ object MapLayers {
                 circleColor(Color.rgb(224, 33, 138)),
                 circleRadius(interpolate(linear(), get("point_count"), stop(2, 13f), stop(50, 22f))),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
-            ).withFilter(has("point_count"))
+            ).withFilter(has("point_count")).apply { minZoom = PHOTO_PIN_ZOOM - 1 }
         )
         style.addLayer(
             SymbolLayer("photos-count", PHOTOS).withProperties(
                 textField(get("point_count_abbreviated")),
                 textFont(arrayOf("Noto Sans Bold")),
                 textSize(12f), textColor(Color.WHITE),
-            ).withFilter(has("point_count"))
+            ).withFilter(has("point_count")).apply { minZoom = PHOTO_PIN_ZOOM - 1 }
         )
         style.addLayer(
             CircleLayer(LAYER_PHOTO_POINTS, PHOTOS).withProperties(
                 circleColor(Color.rgb(224, 33, 138)), circleRadius(7f),
                 circleStrokeColor(Color.WHITE), circleStrokeWidth(2f),
-            ).withFilter(not(has("point_count")))
+            ).withFilter(not(has("point_count"))).apply { minZoom = PHOTO_PIN_ZOOM - 1 }
         )
 
         // Numbered pins for one trip: label is the photo's place in time order ("4" or "4–7").

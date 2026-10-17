@@ -24,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
@@ -35,6 +37,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.matt.unfog.data.Trip
 import com.matt.unfog.homeSpot
-import com.matt.unfog.geo.TransportMode
+import java.time.LocalDate
 import com.matt.unfog.photos.PhotoImporter
 import com.matt.unfog.tracking.TravelMode
 import kotlinx.coroutines.delay
@@ -80,6 +83,8 @@ fun HomeScreen(
     val running by TravelMode.running.collectAsStateWithLifecycle()
     val tripCount by vm.tripCount.collectAsStateWithLifecycle()
     var mode by rememberSaveable { mutableStateOf(MapMode.Explored) }
+    // Index into the newest-first day list shown in Days mode.
+    var dayIndex by rememberSaveable { mutableStateOf(0) }
     var fitted by remember { mutableStateOf(false) }
     val homes by context.homeSpot.spots.collectAsStateWithLifecycle()
     var homeDialog by remember { mutableStateOf(false) }
@@ -165,6 +170,7 @@ fun HomeScreen(
                 MapLayers.set(handle.style, MapLayers.HEX_COARSE, s.frequency.coarse)
                 MapLayers.set(handle.style, MapLayers.ROUTES, s.routes)
                 MapLayers.set(handle.style, MapLayers.PHOTOS, s.photos)
+                MapLayers.set(handle.style, MapLayers.PHOTO_HEAT, s.photoHeat)
                 if (!fitted) {
                     val b = s.bounds
                     if (b != null) {
@@ -194,6 +200,23 @@ fun HomeScreen(
                 MapLayers.show(handle.style, MapLayers.HEX_COARSE, mode == MapMode.Frequency)
                 MapLayers.show(handle.style, MapLayers.ROUTES, mode == MapMode.Routes)
                 MapLayers.show(handle.style, MapLayers.PHOTOS, mode == MapMode.Photos)
+                MapLayers.show(handle.style, MapLayers.PHOTO_HEAT, mode == MapMode.Photos)
+                MapLayers.show(handle.style, MapLayers.DAY_ROUTES, mode == MapMode.Days)
+            }
+            val days = state?.days.orEmpty()
+            val day = days.getOrNull(dayIndex.coerceAtMost(days.lastIndex).coerceAtLeast(0))
+            LaunchedEffect(handle, mode, day?.epochDay, day?.routes) {
+                if (mode != MapMode.Days || day == null) return@LaunchedEffect
+                MapLayers.set(handle.style, MapLayers.DAY_ROUTES, day.routes)
+            }
+            LaunchedEffect(handle, mode, day?.epochDay) {
+                if (mode != MapMode.Days || day == null) return@LaunchedEffect
+                val b = day.bounds
+                runCatching {
+                    handle.map.animateCamera(CameraUpdateFactory.newLatLngBounds(
+                        LatLngBounds.from(b[2], b[3], b[0], b[1]), 140, 420, 140, 360,
+                    ), 600)
+                }
             }
             if (mode == MapMode.Explored) {
                 FogOverlay(handle.map, state?.fog.orEmpty(), Modifier.fillMaxSize())
@@ -264,7 +287,7 @@ fun HomeScreen(
                     }
                 }
             } else {
-                ModeInfo(mode, state, tripCount)
+                ModeInfo(mode, state, tripCount, dayIndex) { dayIndex = it }
             }
         }
 
@@ -289,7 +312,13 @@ fun HomeScreen(
 }
 
 @Composable
-private fun ModeInfo(mode: MapMode, state: HomeViewModel.MapState?, tripCount: Int) {
+private fun ModeInfo(
+    mode: MapMode,
+    state: HomeViewModel.MapState?,
+    tripCount: Int,
+    dayIndex: Int,
+    onDayIndex: (Int) -> Unit,
+) {
     val explored = state?.explored
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -317,16 +346,47 @@ private fun ModeInfo(mode: MapMode, state: HomeViewModel.MapState?, tripCount: I
                     listOf("1" to Color(0xFFFFD666), "3" to Color(0xFFFF8A3D),
                         "10" to Color(0xFFF0567A), "30+" to Color(0xFFB07CFF)),
                 )
-                MapMode.Routes -> Legend(
-                    "How you moved",
-                    TransportMode.entries.filter { it != TransportMode.Still }
-                        .map { it.label to Color(android.graphics.Color.parseColor(it.color)) },
-                )
-                MapMode.Photos -> Text(
-                    "Tap a photo pin to open its trip",
+                MapMode.Routes -> Text(
+                    "Every route you've recorded",
                     style = MaterialTheme.typography.titleSmall,
                 )
+                MapMode.Photos -> {
+                    Text("Where you take photos", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Zoom in for pins; tap one to open its trip",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                MapMode.Days -> DayPicker(state?.days.orEmpty(), dayIndex, onDayIndex)
             }
+        }
+    }
+}
+
+@Composable
+private fun DayPicker(days: List<MapData.Day>, index: Int, onIndex: (Int) -> Unit) {
+    if (days.isEmpty()) {
+        Text("No travel days yet", style = MaterialTheme.typography.titleSmall)
+        return
+    }
+    val i = index.coerceIn(0, days.lastIndex)
+    val day = days[i]
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // The list is newest first, so "previous day" moves further into it.
+        IconButton(onClick = { onIndex(i + 1) }, enabled = i < days.lastIndex) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Earlier day")
+        }
+        Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(formatDate(LocalDate.ofEpochDay(day.epochDay)), style = MaterialTheme.typography.titleSmall)
+            Text(
+                "${plural(day.trips, "trip")} · ${formatKm(day.distanceM)} · ${i + 1} of ${days.size}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = { onIndex(i - 1) }, enabled = i > 0) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Later day")
         }
     }
 }

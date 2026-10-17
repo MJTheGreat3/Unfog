@@ -20,6 +20,7 @@ enum class MapMode(val label: String) {
     Frequency("Frequency"),
     Routes("Routes"),
     Photos("Photos"),
+    Days("Days"),
 }
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -31,6 +32,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val frequency: MapData.Frequency,
         val routes: FeatureCollection,
         val photos: FeatureCollection,
+        val photoHeat: FeatureCollection,
+        val days: List<MapData.Day>,
         val explored: MapData.Explored,
         val bounds: DoubleArray?,
     )
@@ -50,6 +53,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             frequency = MapData.frequency(points),
             routes = MapData.routes(points),
             photos = MapData.photos(photos),
+            photoHeat = MapData.photoHeat(photos),
+            days = MapData.days(points),
             explored = MapData.explored(points),
             bounds = com.matt.unfog.geo.Geo.bounds(points.map { it.lat to it.lng }),
         )
