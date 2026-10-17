@@ -24,9 +24,13 @@ object TravelMode {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
-    fun start(context: Context) {
+    /** Starts a trip, or resumes the active one. [name] is used only for a new trip. */
+    fun start(context: Context, name: String? = null) {
         ContextCompat.startForegroundService(
-            context, Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_START)
+            context,
+            Intent(context, TrackingService::class.java)
+                .setAction(TrackingService.ACTION_START)
+                .putExtra(TrackingService.EXTRA_NAME, name?.trim()?.takeIf { it.isNotEmpty() }),
         )
     }
 

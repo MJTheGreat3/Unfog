@@ -55,6 +55,9 @@ class TrackingService : Service() {
     companion object {
         const val ACTION_START = "com.matt.unfog.START"
         const val ACTION_STOP = "com.matt.unfog.STOP"
+        const val EXTRA_NAME = "name"
+        /** Prefix of the placeholder name; trips still carrying it get named from places at the end. */
+        private const val DEFAULT_NAME_PREFIX = "Trip · "
         private const val CHANNEL = "trip"
         private const val NOTIFICATION_ID = 1
 
@@ -89,12 +92,12 @@ class TrackingService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopTrip()
             // A null intent means the system restarted us after killing the process.
-            else -> startTrip()
+            else -> startTrip(intent?.getStringExtra(EXTRA_NAME))
         }
         return START_STICKY
     }
 
-    private fun startTrip() {
+    private fun startTrip(name: String?) {
         if (trip != null || stopping) return
         if (!TravelMode.hasLocationPermission(this)) {
             stopSelf()
@@ -112,8 +115,8 @@ class TrackingService : Service() {
             val repo = repository
             val active = repo.activeTrip() ?: run {
                 val now = System.currentTimeMillis()
-                val name = "Trip · " + SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(now))
-                repo.trip(repo.startTrip(now, name))!!
+                val placeholder = DEFAULT_NAME_PREFIX + SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(now))
+                repo.trip(repo.startTrip(now, name ?: placeholder))!!
             }
             trip = active
             val pts = repo.points(active.id)
@@ -212,7 +215,7 @@ class TrackingService : Service() {
     }
 
     private suspend fun autoName(t: Trip, points: List<TrackPoint>): String? {
-        if (!t.name.startsWith("Trip · ") || points.isEmpty() || !Geocoder.isPresent()) return null
+        if (!t.name.startsWith(DEFAULT_NAME_PREFIX) || points.isEmpty() || !Geocoder.isPresent()) return null
         val from = placeName(points.first())
         val to = placeName(points.last())
         return when {
