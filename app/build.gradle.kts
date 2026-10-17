@@ -20,18 +20,38 @@ android {
         }
     }
 
+    // Release signing comes from ~/.gradle/gradle.properties so the key never enters the repo.
+    // Without it, release builds fall back to the debug key (fine for local testing only).
+    val releaseStore = providers.gradleProperty("UNFOG_STORE_FILE").orNull
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = providers.gradleProperty("UNFOG_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("UNFOG_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("UNFOG_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        // The release lint gate resolves desktop-only Compose artifacts pulled in by Coil, which
+        // Maven Central rate-limits. Run ./gradlew lint explicitly instead.
+        checkReleaseBuilds = false
     }
 
     buildFeatures {
