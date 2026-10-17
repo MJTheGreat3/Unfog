@@ -155,23 +155,3 @@ object Geo {
         return doubleArrayOf(minLat, minLng, maxLat, maxLng)
     }
 }
-
-enum class TransportMode(val label: String, val color: String) {
-    Still("Still", "#9AA3B5"),
-    Walk("Walk", "#4CC38A"),
-    Bike("Bike", "#3FB8E8"),
-    Road("Road", "#FFB13D"),
-    Fast("Train / highway", "#F0567A"),
-    Flight("Flight", "#B07CFF");
-
-    companion object {
-        fun of(speedMps: Double): TransportMode = when {
-            speedMps < 0.5 -> Still
-            speedMps < 2.5 -> Walk
-            speedMps < 7 -> Bike
-            speedMps < 28 -> Road
-            speedMps < 70 -> Fast
-            else -> Flight
-        }
-    }
-}
