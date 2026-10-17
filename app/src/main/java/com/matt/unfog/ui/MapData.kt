@@ -101,11 +101,9 @@ object MapData {
             .sortedByDescending { it.epochDay }
     }
 
-    /** Unclustered photo points for the heatmap. */
-    fun photoHeat(photos: List<TripPhoto>): FeatureCollection =
-        FeatureCollection.fromFeatures(photos.filter { it.lat != null && it.lng != null }.map {
-            Feature.fromGeometry(Point.fromLngLat(it.lng!!, it.lat!!))
-        })
+    /** Photo positions for the heatmap. */
+    fun photoHeat(photos: List<TripPhoto>): List<LatLng> =
+        photos.filter { it.lat != null && it.lng != null }.map { LatLng(it.lat!!, it.lng!!) }
 
     fun photos(photos: List<TripPhoto>): FeatureCollection =
         FeatureCollection.fromFeatures(photos.filter { it.lat != null && it.lng != null }.map {
