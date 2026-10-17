@@ -164,7 +164,7 @@ object MapLayers {
 
         style.addLayer(
             LineLayer("replay-line", REPLAY).withProperties(
-                lineColor(Color.rgb(255, 138, 61)), lineWidth(width), lineOpacity(0.95f),
+                lineColor(get("color")), lineWidth(width), lineOpacity(0.95f),
                 lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND),
             )
         )

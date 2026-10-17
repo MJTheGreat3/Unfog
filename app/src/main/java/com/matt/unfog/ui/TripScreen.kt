@@ -4,10 +4,6 @@ import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,7 +36,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,12 +64,7 @@ import com.matt.unfog.geo.Geo
 import com.matt.unfog.photos.PhotoImporter
 import kotlinx.coroutines.delay
 import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
-import org.maplibre.geojson.Feature
-import org.maplibre.geojson.FeatureCollection
-import org.maplibre.geojson.LineString
-import org.maplibre.geojson.Point
 
 @Composable
 fun TripScreen(tripId: Long, onBack: () -> Unit) {
@@ -150,12 +140,12 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
             }
             LaunchedEffect(handle, replaying) {
                 if (!replaying) {
-                    MapLayers.show(handle.style, MapLayers.REPLAY, false)
-                    MapLayers.show(handle.style, MapLayers.REPLAY_HEAD, false)
+                    clearReplay(handle)
                     replayPhoto = null
                     return@LaunchedEffect
                 }
-                replay(handle, points, photos) { replayPhoto = it }
+                replay(handle, points, photos, onPhoto = { replayPhoto = it })
+                handle.fit(points, bottomPadding = 520)
                 delay(1_500)
                 replaying = false
             }
@@ -171,20 +161,7 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
             FilledTonalIconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Delete") }
         }
 
-        AnimatedVisibility(
-            visible = replayPhoto != null,
-            enter = fadeIn() + scaleIn(initialScale = 0.8f),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center),
-        ) {
-            replayPhoto?.let {
-                AsyncImage(
-                    model = it.uri, contentDescription = null, contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(220.dp).clip(RoundedCornerShape(20.dp))
-                        .background(Color.Black),
-                )
-            }
-        }
+        ReplayPhotoPopup(replayPhoto, Modifier.align(Alignment.Center))
 
         val t = trip
         if (t != null && !replaying) {
@@ -283,17 +260,10 @@ fun TripScreen(tripId: Long, onBack: () -> Unit) {
         )
     }
     if (renaming) {
-        var name by remember { mutableStateOf(trip?.name.orEmpty()) }
-        AlertDialog(
-            onDismissRequest = { renaming = false },
-            title = { Text("Rename trip") },
-            text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },
-            confirmButton = {
-                TextButton(enabled = name.isNotBlank(), onClick = { vm.rename(name); renaming = false }) {
-                    Text("Save")
-                }
-            },
-            dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } },
+        RenameTripDialog(
+            current = trip?.name.orEmpty(),
+            onDismiss = { renaming = false },
+            onRename = { vm.rename(it); renaming = false },
         )
     }
     if (confirmDelete) {
@@ -358,59 +328,4 @@ fun MapHandle.fit(points: List<TrackPoint>, bottomPadding: Int = 120) {
         )
     }
     if (map.cameraPosition.zoom > 16) map.moveCamera(CameraUpdateFactory.zoomTo(16.0))
-}
-
-/**
- * Animated playback: the route draws itself over ~25 seconds while the camera follows, and
- * each photo pops up as the playhead passes the moment it was taken.
- */
-private suspend fun replay(
-    handle: MapHandle,
-    points: List<TrackPoint>,
-    photos: List<TripPhoto>,
-    onPhoto: (TripPhoto?) -> Unit,
-) {
-    if (points.size < 2) return
-    val style = handle.style
-    MapLayers.show(style, MapLayers.REPLAY, true)
-    MapLayers.show(style, MapLayers.REPLAY_HEAD, true)
-    val start = points.first().timeMs
-    val end = points.last().timeMs
-    val frames = 300
-    val frameMs = 85L
-    handle.map.animateCamera(
-        CameraUpdateFactory.newLatLngZoom(LatLng(points[0].lat, points[0].lng), 15.0), 800,
-    )
-    delay(900)
-
-    var idx = 0
-    var nextPhoto = 0
-    val drawn = mutableListOf<Point>()
-    for (f in 0..frames) {
-        val t = start + (end - start) * f / frames
-        while (idx < points.size && points[idx].timeMs <= t) {
-            drawn += Point.fromLngLat(points[idx].lng, points[idx].lat)
-            idx++
-        }
-        if (drawn.size >= 2) {
-            MapLayers.set(style, MapLayers.REPLAY,
-                FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(drawn))))
-        }
-        val head = drawn.lastOrNull() ?: continue
-        MapLayers.set(style, MapLayers.REPLAY_HEAD,
-            FeatureCollection.fromFeature(Feature.fromGeometry(head)))
-        if (f % 4 == 0) {
-            handle.map.easeCamera(
-                CameraUpdateFactory.newLatLng(LatLng(head.latitude(), head.longitude())), 200,
-            )
-        }
-        if (nextPhoto < photos.size && photos[nextPhoto].takenMs <= t) {
-            onPhoto(photos[nextPhoto])
-            while (nextPhoto < photos.size && photos[nextPhoto].takenMs <= t) nextPhoto++
-            delay(1_400)
-            onPhoto(null)
-        }
-        delay(frameMs)
-    }
-    handle.fit(points, bottomPadding = 520)
 }
