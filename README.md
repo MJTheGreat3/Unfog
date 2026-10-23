@@ -7,12 +7,14 @@ Unfog is an Android travel journal. Turn on travel mode, and it records your rou
 - **Travel mode.** A foreground location service records the trip. You can start and stop it from the app, the notification or a Quick Settings tile. Points are written straight to SQLite, so the track survives if the UI is killed.
 - **Trip photos.** Use any camera app. Unfog matches photos to a trip by the time they were taken and places each one using its EXIF GPS, or the track position at that moment when the photo has none. Originals stay in your gallery.
 - **Map modes**
-  - **Explored**: fog of war over the whole map, with holes wherever you've been, and the total area uncovered.
+  - **Explored**: fog of war over the whole map, cleared in wide, soft corridors wherever you've been, with the total area uncovered.
+  - **Days**: step through your travel day by day. Each trip that day gets its own colour, with a key to open or rename it, and the whole day can be replayed.
+  - **Photos**: a blue-to-red heatmap of where you take photos, with pins when you zoom in; tap one to open its trip.
   - **Frequency**: hexagons coloured by how many distinct days you've visited each place.
-  - **Routes**: every track, coloured by inferred transport mode (walk, bike, road, train, flight).
-  - **Photos**: clustered photo pins; tap one to open its trip.
-- **Trip replay.** An animated playback of a route, with photos popping up where they were taken.
-- **Places.** Save home, work or anywhere else you return to. Unfog offers to start a trip when you leave one of them, and ends the trip when you arrive at one.
+  - **Routes**: every track you've recorded.
+- **Trip replay.** An animated playback of a trip or a whole day, with photos popping up where they were taken.
+- **Places.** Save home, work or anywhere else you return to. Unfog asks whether to start a trip when you leave one, and whether to end it when you arrive at one.
+- **Light and dark maps.** The dark map is a recoloured version of the light one, so it keeps the same detail (see `tools/make_dark_style.py`).
 
 ## Install
 
