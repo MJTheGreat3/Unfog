@@ -3,6 +3,10 @@ package com.matt.unfog.ui
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -91,12 +95,14 @@ fun HomeSpotDialog(
     val spots by context.homeSpot.spots.collectAsStateWithLifecycle()
     var editingId by remember { mutableStateOf(initialEditId) }
     var background by remember { mutableStateOf(HomeFence.hasBackgroundLocation(context)) }
+    var fullScreen by remember { mutableStateOf(HomeFence.canUseFullScreen(context)) }
     var locating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     // "Allow all the time" is granted on a separate settings screen; re-check when we come back.
     LifecycleResumeEffect(Unit) {
         background = HomeFence.hasBackgroundLocation(context)
+        fullScreen = HomeFence.canUseFullScreen(context)
         if (background) HomeFence.sync(context)
         onPauseOrDispose { }
     }
@@ -178,6 +184,11 @@ fun HomeSpotDialog(
                         }
                     }
                     if (needsBackground) BackgroundNotice { backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+                    if (!fullScreen && spots.any { it.askOnLeave || it.autoStop }) FullScreenNotice {
+                        if (Build.VERSION.SDK_INT >= 34) context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.fromParts("package", context.packageName, null))
+                        )
+                    }
                     FilledTonalButton(
                         onClick = { placeHere(null) }, enabled = !locating,
                         modifier = Modifier.fillMaxWidth(),
@@ -242,6 +253,19 @@ fun HomeSpotDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
+}
+
+@Composable
+private fun FullScreenNotice(onAllow: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "Place alarms can only show as a notification. Allow full-screen alerts so they " +
+                "ring over the lock screen like an alarm.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        OutlinedButton(onClick = onAllow) { Text("Allow full-screen alerts") }
+    }
 }
 
 @Composable
