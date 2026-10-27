@@ -66,6 +66,18 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".widget.StatsWidget"
+            android:exported="false"
+            android:label="Travel stats">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/stats_widget_info" />
+        </receiver>
+
         <service
             android:name=".tracking.TravelTileService"
             android:exported="true"

@@ -1,4 +1,6 @@
 <resources>
     <color name="fog">#FF1B1F2A</color>
     <color name="ember">#FFFF8A3D</color>
+    <color name="mist">#FFC9D1E0</color>
+    <color name="mist_dim">#FF8A93A6</color>
 </resources>

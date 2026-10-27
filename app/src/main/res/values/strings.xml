@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Unfog</string>
     <string name="tile_label">Travel mode</string>
+    <string name="widget_description">Your travel stats, and a live view of the trip in progress</string>
 </resources>
