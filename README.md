@@ -13,7 +13,7 @@ Unfog is an Android travel journal. Turn on travel mode, and it records your rou
   - **Frequency**: hexagons coloured by how many distinct days you've visited each place.
   - **Routes**: every track you've recorded.
 - **Trip replay.** An animated playback of a trip or a whole day, with photos popping up where they were taken.
-- **Places.** Save home, work or anywhere else you return to. Unfog asks whether to start a trip when you leave one, and whether to end it when you arrive at one.
+- **Places.** Save home, work or anywhere else you return to. When you leave one, an alarm-style alert rings over the lock screen and asks whether to start a trip. When you arrive at one during a trip, it asks whether to end it.
 - **Light and dark maps.** The dark map is a recoloured version of the light one, so it keeps the same detail (see `tools/make_dark_style.py`).
 
 ## Install
@@ -59,5 +59,6 @@ The minimum supported version is Android 10 (API 29).
 | Photos | Find the photos taken during a trip |
 | Media location | Read GPS from photo EXIF data |
 | Location "Allow all the time" (optional) | Notice you leaving a saved place while Unfog is closed |
+| Full-screen alerts | Show place alarms over the lock screen |
 
 Unfog has no account or server, and it sends no analytics. Map tiles are the only network traffic.
