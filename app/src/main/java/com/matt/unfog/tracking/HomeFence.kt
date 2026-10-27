@@ -9,6 +9,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,7 +19,6 @@ import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
-import com.matt.unfog.MainActivity
 import com.matt.unfog.R
 import com.matt.unfog.homeSpot
 import com.matt.unfog.repository
@@ -29,7 +30,8 @@ import kotlin.concurrent.thread
  */
 object HomeFence {
     private const val TAG = "HomeFence"
-    private const val CHANNEL = "home"
+    private const val CHANNEL = "place_alarm"
+    private const val OLD_CHANNEL = "home"
     private const val NOTIFY_LEFT = 2
     private const val NOTIFY_BACK = 3
 
@@ -70,11 +72,38 @@ object HomeFence {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
     )
 
+    /** Alarm-like channel: alarm sound and vibration, heard even when the phone is on silent. */
     private fun channel(context: Context) {
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Home", NotificationManager.IMPORTANCE_HIGH)
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel(OLD_CHANNEL)
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Place alarms", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Asks to start a trip when you leave a saved place, and to end it when you arrive"
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 600, 500, 600)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                setBypassDnd(true)
+            }
         )
     }
+
+    /** Whether alarms can take over the screen; Android 14+ lets the user turn this off. */
+    fun canUseFullScreen(context: Context) = Build.VERSION.SDK_INT < 34 ||
+        context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+
+    private fun alarmIntent(context: Context, code: Int, kind: String, place: String, trip: String? = null) =
+        PendingIntent.getActivity(
+            context, code, PlaceAlarmActivity.intent(context, kind, place, trip),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     fun notifyLeftHome(context: Context, placeName: String) {
         channel(context)
@@ -83,14 +112,16 @@ object HomeFence {
             Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_START),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val open = PendingIntent.getActivity(
-            context, 11, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-        )
+        val alarm = alarmIntent(context, 11, PlaceAlarmActivity.KIND_LEFT, placeName)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fog)
             .setContentTitle("Heading out?")
             .setContentText("You just left $placeName. Start a trip to record it.")
-            .setContentIntent(open)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(alarm)
+            .setFullScreenIntent(alarm, true)
             .setAutoCancel(true)
             .setTimeoutAfter(30 * 60_000L)
             .addAction(0, "Start trip", start)
@@ -107,13 +138,16 @@ object HomeFence {
             Intent(context, TrackingService::class.java).setAction(TrackingService.ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val alarm = alarmIntent(context, 12, PlaceAlarmActivity.KIND_ARRIVED, placeName, tripName)
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_fog)
             .setContentTitle(if (placeName == "Home") "Welcome home" else "You're at $placeName")
             .setContentText("End \u201c$tripName\u201d?")
-            .setContentIntent(PendingIntent.getActivity(
-                context, 12, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-            ))
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(alarm)
+            .setFullScreenIntent(alarm, true)
             .setAutoCancel(true)
             .addAction(0, "End trip", end)
             .build()
