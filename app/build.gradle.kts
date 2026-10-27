@@ -11,8 +11,8 @@ android {
         applicationId = "com.matt.unfog"
         minSdk = 29
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         // MapLibre ships native code for every ABI; phones only need arm64, the emulator x86_64.
         ndk {
