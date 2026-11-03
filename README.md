@@ -15,6 +15,7 @@ Unfog is an Android travel journal. Turn on travel mode, and it records your rou
 - **Trip replay.** An animated playback of a trip or a whole day, with photos popping up where they were taken.
 - **Places.** Save home, work or anywhere else you return to. When you leave one, an alarm-style alert rings over the lock screen and asks whether to start a trip. When you arrive at one during a trip, it asks whether to end it.
 - **Home-screen widget.** A 2×3 widget shows the area you've unfogged, trips, distance, days and photos. During a trip it switches to a live view with distance, a running timer and an End button.
+- **Trips for Kaizen.** A read-only content provider (`content://com.matt.unfog.trips/trips`) shares each trip's name, times, distance and photo count with apps you allow through the `READ_TRIPS` permission. Routes and photos stay private.
 - **Light and dark maps.** The dark map is a recoloured version of the light one, so it keeps the same detail (see `tools/make_dark_style.py`).
 
 ## Install
@@ -61,5 +62,7 @@ The minimum supported version is Android 10 (API 29).
 | Media location | Read GPS from photo EXIF data |
 | Location "Allow all the time" (optional) | Notice you leaving a saved place while Unfog is closed |
 | Full-screen alerts | Show place alarms over the lock screen |
+
+Unfog also defines `com.matt.unfog.permission.READ_TRIPS`. Android asks you before another app (Kaizen) may read your trip list.
 
 Unfog has no account or server, and it sends no analytics. Map tiles are the only network traffic.

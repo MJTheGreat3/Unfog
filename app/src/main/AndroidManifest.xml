@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Lets apps you allow (Kaizen) read your trips: names, times and distance, no routes. -->
+    <permission
+        android:name="com.matt.unfog.permission.READ_TRIPS"
+        android:description="@string/permission_read_trips_description"
+        android:label="@string/permission_read_trips_label"
+        android:protectionLevel="dangerous" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -77,6 +84,12 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/stats_widget_info" />
         </receiver>
+
+        <provider
+            android:name=".data.TripsProvider"
+            android:authorities="com.matt.unfog.trips"
+            android:exported="true"
+            android:readPermission="com.matt.unfog.permission.READ_TRIPS" />
 
         <service
             android:name=".tracking.TravelTileService"

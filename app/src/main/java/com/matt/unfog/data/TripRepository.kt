@@ -74,6 +74,9 @@ class TripRepository(context: Context) {
 
     fun trips(): List<Trip> = queryTrips("")
 
+    /** Trips that started at or after [sinceMs], for [TripsProvider]. */
+    fun tripsSince(sinceMs: Long): List<Trip> = queryTrips("WHERE t.start_ms >= ${sinceMs.coerceAtLeast(0)}")
+
     fun observeTrips(): Flow<List<Trip>> = observe { trips() }
 
     fun observeTrip(id: Long): Flow<Trip?> = observe { trip(id) }

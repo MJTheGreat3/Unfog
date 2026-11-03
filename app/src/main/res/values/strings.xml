@@ -2,4 +2,6 @@
     <string name="app_name">Unfog</string>
     <string name="tile_label">Travel mode</string>
     <string name="widget_description">Your travel stats, and a live view of the trip in progress</string>
+    <string name="permission_read_trips_label">read your Unfog trips</string>
+    <string name="permission_read_trips_description">See the names, times, distance and photo count of trips recorded in Unfog. Routes and photos stay private.</string>
 </resources>
